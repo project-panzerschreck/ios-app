@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Built xcframeworks and llama.cpp build artifacts
+Frameworks/
+build-llama/
+build-mac/
+build-mac-rpc-only/
+build-sim/
+vendor/
+
+# Downloaded models
+Models/*.gguf
+
+# Xcode derived data / indexes
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+
+# macOS
+.DS_Store

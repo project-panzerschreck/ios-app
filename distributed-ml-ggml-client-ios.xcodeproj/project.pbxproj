@@ -1,0 +1,646 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A30493DF2F4D34E0003138C5 /* ggml-metal.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493CF2F4D335C003138C5 /* ggml-metal.xcframework */; };
+		A30493E12F4D34E0003138C5 /* ggml-blas.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493D02F4D335C003138C5 /* ggml-blas.xcframework */; };
+		A30493E32F4D34E0003138C5 /* ggml-cpu.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493362F4D2DFA003138C5 /* ggml-cpu.xcframework */; };
+		A30493E52F4D34E0003138C5 /* ggml-base.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493382F4D2DFA003138C5 /* ggml-base.xcframework */; };
+		A30493E72F4D34E0003138C5 /* ggml.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493372F4D2DFA003138C5 /* ggml.xcframework */; };
+		A30493E92F4D34E0003138C5 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493352F4D2DFA003138C5 /* llama.xcframework */; };
+		A30502012F4D1DFF003138C5 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30502032F4D1DFF003138C5 /* Metal.framework */; settings = {ATTRIBUTES = (Required, ); }; };
+		A30502022F4D1DFF003138C5 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30502042F4D1DFF003138C5 /* Accelerate.framework */; settings = {ATTRIBUTES = (Required, ); }; };
+		DEB112FD8701FFB9E5C7D9B3 /* ggml-rpc.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3D84C1762DC18B423C308E1D /* ggml-rpc.xcframework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A30491332F4D1DFF003138C5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A304911D2F4D1DFE003138C5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A30491242F4D1DFE003138C5;
+			remoteInfo = "distributed-ml-ggml-client-ios";
+		};
+		A304913D2F4D1DFF003138C5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A304911D2F4D1DFE003138C5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A30491242F4D1DFE003138C5;
+			remoteInfo = "distributed-ml-ggml-client-ios";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		3D84C1762DC18B423C308E1D /* ggml-rpc.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "ggml-rpc.xcframework"; path = "Frameworks/ggml-rpc.xcframework"; sourceTree = "<group>"; };
+		A30491252F4D1DFE003138C5 /* distributed-ml-ggml-client-ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "distributed-ml-ggml-client-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A30491322F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "distributed-ml-ggml-client-iosTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A304913C2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "distributed-ml-ggml-client-iosUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A30493352F4D2DFA003138C5 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = "<group>"; };
+		A30493362F4D2DFA003138C5 /* ggml-cpu.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "ggml-cpu.xcframework"; path = "Frameworks/ggml-cpu.xcframework"; sourceTree = "<group>"; };
+		A30493372F4D2DFA003138C5 /* ggml.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ggml.xcframework; path = Frameworks/ggml.xcframework; sourceTree = "<group>"; };
+		A30493382F4D2DFA003138C5 /* ggml-base.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "ggml-base.xcframework"; path = "Frameworks/ggml-base.xcframework"; sourceTree = "<group>"; };
+		A30493CF2F4D335C003138C5 /* ggml-metal.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "ggml-metal.xcframework"; path = "Frameworks/ggml-metal.xcframework"; sourceTree = "<group>"; };
+		A30493D02F4D335C003138C5 /* ggml-blas.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "ggml-blas.xcframework"; path = "Frameworks/ggml-blas.xcframework"; sourceTree = "<group>"; };
+		A30502032F4D1DFF003138C5 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		A30502042F4D1DFF003138C5 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A30491272F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "distributed-ml-ggml-client-ios";
+			sourceTree = "<group>";
+		};
+		A30491352F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "distributed-ml-ggml-client-iosTests";
+			sourceTree = "<group>";
+		};
+		A304913F2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "distributed-ml-ggml-client-iosUITests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30491222F4D1DFE003138C5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A30502012F4D1DFF003138C5 /* Metal.framework in Frameworks */,
+				A30493E52F4D34E0003138C5 /* ggml-base.xcframework in Frameworks */,
+				A30493DF2F4D34E0003138C5 /* ggml-metal.xcframework in Frameworks */,
+				A30493E32F4D34E0003138C5 /* ggml-cpu.xcframework in Frameworks */,
+				A30493E12F4D34E0003138C5 /* ggml-blas.xcframework in Frameworks */,
+				A30502022F4D1DFF003138C5 /* Accelerate.framework in Frameworks */,
+				A30493E72F4D34E0003138C5 /* ggml.xcframework in Frameworks */,
+				A30493E92F4D34E0003138C5 /* llama.xcframework in Frameworks */,
+				DEB112FD8701FFB9E5C7D9B3 /* ggml-rpc.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A304912F2F4D1DFF003138C5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A30491392F4D1DFF003138C5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A304911C2F4D1DFE003138C5 = {
+			isa = PBXGroup;
+			children = (
+				A30491272F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */,
+				A30491352F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests */,
+				A304913F2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests */,
+				A30491262F4D1DFE003138C5 /* Products */,
+				A30502072F4D1DFF003138C5 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		A30491262F4D1DFE003138C5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A30491252F4D1DFE003138C5 /* distributed-ml-ggml-client-ios.app */,
+				A30491322F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests.xctest */,
+				A304913C2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A30502072F4D1DFF003138C5 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A30493D02F4D335C003138C5 /* ggml-blas.xcframework */,
+				3D84C1762DC18B423C308E1D /* ggml-rpc.xcframework */,
+				A30493CF2F4D335C003138C5 /* ggml-metal.xcframework */,
+				A30493372F4D2DFA003138C5 /* ggml.xcframework */,
+				A30493382F4D2DFA003138C5 /* ggml-base.xcframework */,
+				A30493362F4D2DFA003138C5 /* ggml-cpu.xcframework */,
+				A30493352F4D2DFA003138C5 /* llama.xcframework */,
+				A30502032F4D1DFF003138C5 /* Metal.framework */,
+				A30502042F4D1DFF003138C5 /* Accelerate.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A30491242F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A30491462F4D1DFF003138C5 /* Build configuration list for PBXNativeTarget "distributed-ml-ggml-client-ios" */;
+			buildPhases = (
+				A30491212F4D1DFE003138C5 /* Sources */,
+				A30491222F4D1DFE003138C5 /* Frameworks */,
+				A30491232F4D1DFE003138C5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A30491272F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */,
+			);
+			name = "distributed-ml-ggml-client-ios";
+			packageProductDependencies = (
+			);
+			productName = "distributed-ml-ggml-client-ios";
+			productReference = A30491252F4D1DFE003138C5 /* distributed-ml-ggml-client-ios.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A30491312F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A30491492F4D1DFF003138C5 /* Build configuration list for PBXNativeTarget "distributed-ml-ggml-client-iosTests" */;
+			buildPhases = (
+				A304912E2F4D1DFF003138C5 /* Sources */,
+				A304912F2F4D1DFF003138C5 /* Frameworks */,
+				A30491302F4D1DFF003138C5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A30491342F4D1DFF003138C5 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A30491352F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests */,
+			);
+			name = "distributed-ml-ggml-client-iosTests";
+			packageProductDependencies = (
+			);
+			productName = "distributed-ml-ggml-client-iosTests";
+			productReference = A30491322F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A304913B2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A304914C2F4D1DFF003138C5 /* Build configuration list for PBXNativeTarget "distributed-ml-ggml-client-iosUITests" */;
+			buildPhases = (
+				A30491382F4D1DFF003138C5 /* Sources */,
+				A30491392F4D1DFF003138C5 /* Frameworks */,
+				A304913A2F4D1DFF003138C5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A304913E2F4D1DFF003138C5 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A304913F2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests */,
+			);
+			name = "distributed-ml-ggml-client-iosUITests";
+			packageProductDependencies = (
+			);
+			productName = "distributed-ml-ggml-client-iosUITests";
+			productReference = A304913C2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A304911D2F4D1DFE003138C5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					A30491242F4D1DFE003138C5 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					A30491312F4D1DFF003138C5 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = A30491242F4D1DFE003138C5;
+					};
+					A304913B2F4D1DFF003138C5 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = A30491242F4D1DFE003138C5;
+					};
+				};
+			};
+			buildConfigurationList = A30491202F4D1DFE003138C5 /* Build configuration list for PBXProject "distributed-ml-ggml-client-ios" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A304911C2F4D1DFE003138C5;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A30491262F4D1DFE003138C5 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A30491242F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */,
+				A30491312F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests */,
+				A304913B2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A30491232F4D1DFE003138C5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A30491302F4D1DFF003138C5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A304913A2F4D1DFF003138C5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A30491212F4D1DFE003138C5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A304912E2F4D1DFF003138C5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A30491382F4D1DFF003138C5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A30491342F4D1DFF003138C5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A30491242F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */;
+			targetProxy = A30491332F4D1DFF003138C5 /* PBXContainerItemProxy */;
+		};
+		A304913E2F4D1DFF003138C5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A30491242F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */;
+			targetProxy = A304913D2F4D1DFF003138C5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A30491442F4D1DFF003138C5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A30491452F4D1DFF003138C5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A30491472F4D1DFF003138C5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = "distributed-ml-ggml-client-ios/distributed-ml-ggml-client-ios.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sreehal.distributed-ml-ggml-client-ios";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "distributed-ml-ggml-client-ios/Bridge/Bridging-Header.h";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				SYSTEM_HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/vendor/llama.cpp/include",
+					"$(PROJECT_DIR)/vendor/llama.cpp/ggml/include",
+				);
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A30491482F4D1DFF003138C5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = "distributed-ml-ggml-client-ios/distributed-ml-ggml-client-ios.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sreehal.distributed-ml-ggml-client-ios";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "distributed-ml-ggml-client-ios/Bridge/Bridging-Header.h";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				SYSTEM_HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/vendor/llama.cpp/include",
+					"$(PROJECT_DIR)/vendor/llama.cpp/ggml/include",
+				);
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A304914A2F4D1DFF003138C5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sreehal.distributed-ml-ggml-client-iosTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/distributed-ml-ggml-client-ios.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/distributed-ml-ggml-client-ios";
+			};
+			name = Debug;
+		};
+		A304914B2F4D1DFF003138C5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sreehal.distributed-ml-ggml-client-iosTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/distributed-ml-ggml-client-ios.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/distributed-ml-ggml-client-ios";
+			};
+			name = Release;
+		};
+		A304914D2F4D1DFF003138C5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sreehal.distributed-ml-ggml-client-iosUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "distributed-ml-ggml-client-ios";
+			};
+			name = Debug;
+		};
+		A304914E2F4D1DFF003138C5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sreehal.distributed-ml-ggml-client-iosUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "distributed-ml-ggml-client-ios";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A30491202F4D1DFE003138C5 /* Build configuration list for PBXProject "distributed-ml-ggml-client-ios" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A30491442F4D1DFF003138C5 /* Debug */,
+				A30491452F4D1DFF003138C5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A30491462F4D1DFF003138C5 /* Build configuration list for PBXNativeTarget "distributed-ml-ggml-client-ios" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A30491472F4D1DFF003138C5 /* Debug */,
+				A30491482F4D1DFF003138C5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A30491492F4D1DFF003138C5 /* Build configuration list for PBXNativeTarget "distributed-ml-ggml-client-iosTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A304914A2F4D1DFF003138C5 /* Debug */,
+				A304914B2F4D1DFF003138C5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A304914C2F4D1DFF003138C5 /* Build configuration list for PBXNativeTarget "distributed-ml-ggml-client-iosUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A304914D2F4D1DFF003138C5 /* Debug */,
+				A304914E2F4D1DFF003138C5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A304911D2F4D1DFE003138C5 /* Project object */;
+}
