@@ -35,7 +35,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 LLAMA_DIR="$PROJECT_DIR/vendor/llama.cpp"
 BUILD_BASE="$PROJECT_DIR/build-llama"
 OUTPUT_DIR="$PROJECT_DIR/Frameworks"
-IOS_MIN="17.0"
+IOS_MIN="15.6"
 
 # ── Pin a specific llama.cpp release ─────────────────────────────────────────
 # Update this tag to upgrade.  Find tags at https://github.com/ggml-org/llama.cpp/tags

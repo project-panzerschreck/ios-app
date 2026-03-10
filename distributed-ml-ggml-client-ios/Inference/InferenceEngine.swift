@@ -311,7 +311,7 @@ final class InferenceEngine: ObservableObject {
                 var req = URLRequest(url: url)
                 req.httpMethod = "POST"
                 req.timeoutInterval = 5
-                try? await URLSession.shared.data(for: req)
+                _ = try? await URLSession.shared.data(for: req)
                 try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 s
             }
         }

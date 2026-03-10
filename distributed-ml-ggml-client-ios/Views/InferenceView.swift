@@ -40,7 +40,7 @@ struct InferenceView: View {
     // ── Body ──────────────────────────────────────────────────────────────────
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 // modelSection
                 // if case .ready = engine.modelState {
@@ -54,6 +54,7 @@ struct InferenceView: View {
             .toolbar { toolbarContent }
             .sheet(isPresented: $showDocPicker) { documentPicker }
         }
+        .navigationViewStyle(.stack)
         .onAppear { refreshLocalModels() }
     }
 
@@ -139,10 +140,14 @@ struct InferenceView: View {
         }
 
         Section("Parameters") {
-            LabeledContent("Max tokens") {
+            HStack {
+                Text("Max tokens")
+                Spacer()
                 Stepper("\(maxTokens)", value: $maxTokens, in: 1...2048, step: 50)
             }
-            LabeledContent(String(format: "Temperature  %.2f", temperature)) {
+            HStack {
+                Text(String(format: "Temperature  %.2f", temperature))
+                Spacer()
                 Slider(value: $temperature, in: 0...2, step: 0.05)
             }
         }
@@ -232,25 +237,37 @@ struct InferenceView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                LabeledContent("Thread count") {
+                HStack {
+                    Text("Thread count")
+                    Spacer()
                     Stepper(String(rpcThreads), value: $rpcThreads, in: 1...64, step: 1)
                         .disabled(isRunning)
                 }
-                LabeledContent("Host") {
+                HStack {
+                    Text("Host")
+                    Spacer()
                     TextField("0.0.0.0", text: $rpcHost)
                         .disabled(isRunning)
                         .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 160)
                 }
-                LabeledContent("Port") {
+                HStack {
+                    Text("Port")
+                    Spacer()
                     Stepper(String(rpcPort), value: $rpcPort, in: 1024...65535, step: 1)
                         .disabled(isRunning)
                 }
-                LabeledContent("Discovery IP") {
+                HStack {
+                    Text("Discovery IP")
+                    Spacer()
                     TextField("255.255.255.255", text: $rpcDiscoveryIp)
                         .disabled(isRunning)
                         .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 160)
                 }
-                LabeledContent("Discovery Port") {
+                HStack {
+                    Text("Discovery Port")
+                    Spacer()
                     Stepper(String(rpcDiscoveryPort), value: $rpcDiscoveryPort, in: 1024...65535, step: 1)
                         .disabled(isRunning)
                 }
