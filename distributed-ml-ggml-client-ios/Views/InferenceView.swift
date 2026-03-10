@@ -237,12 +237,7 @@ struct InferenceView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                HStack {
-                    Text("Thread count")
-                    Spacer()
-                    Stepper(String(rpcThreads), value: $rpcThreads, in: 1...64, step: 1)
-                        .disabled(isRunning)
-                }
+                IntStepperField("Thread count", value: $rpcThreads, in: 1...64, disabled: isRunning)
                 HStack {
                     Text("Host")
                     Spacer()
@@ -251,12 +246,7 @@ struct InferenceView: View {
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 160)
                 }
-                HStack {
-                    Text("Port")
-                    Spacer()
-                    Stepper(String(rpcPort), value: $rpcPort, in: 1024...65535, step: 1)
-                        .disabled(isRunning)
-                }
+                IntStepperField("Port", value: $rpcPort, in: 1024...65535, disabled: isRunning)
                 HStack {
                     Text("Discovery IP")
                     Spacer()
@@ -265,12 +255,7 @@ struct InferenceView: View {
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 160)
                 }
-                HStack {
-                    Text("Discovery Port")
-                    Spacer()
-                    Stepper(String(rpcDiscoveryPort), value: $rpcDiscoveryPort, in: 1024...65535, step: 1)
-                        .disabled(isRunning)
-                }
+                IntStepperField("Discovery Port", value: $rpcDiscoveryPort, in: 1024...65535, disabled: isRunning)
             }
 
             // ── Start / Stop ──────────────────────────────────────────────────
@@ -458,6 +443,59 @@ private struct DocumentPicker: UIViewControllerRepresentable {
                 .appendingPathComponent(url.lastPathComponent)
             try? FileManager.default.copyItem(at: url, to: dest)
             onPick(dest)
+        }
+    }
+}
+
+// ── Int field with inline text entry + stepper ────────────────────────────────
+
+private struct IntStepperField: View {
+    let label: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let disabled: Bool
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    init(_ label: String, value: Binding<Int>, in range: ClosedRange<Int>, disabled: Bool) {
+        self.label    = label
+        self._value   = value
+        self.range    = range
+        self.disabled = disabled
+        self._text    = State(initialValue: String(value.wrappedValue))
+    }
+
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("", text: $text)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 64)
+                .focused($focused)
+                .disabled(disabled)
+                .onChange(of: focused) { isFocused in
+                    if !isFocused { commit() }
+                }
+                .onChange(of: value) { newVal in
+                    if !focused { text = String(newVal) }
+                }
+            Stepper("", value: $value, in: range, step: 1)
+                .labelsHidden()
+                .disabled(disabled)
+                .onChange(of: value) { newVal in
+                    text = String(newVal)
+                }
+        }
+    }
+
+    private func commit() {
+        if let parsed = Int(text), range.contains(parsed) {
+            value = parsed
+        } else {
+            text = String(value)
         }
     }
 }
