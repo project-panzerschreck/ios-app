@@ -187,6 +187,10 @@ typedef void (^LlamaShardCallback)(NSData *hiddenState,
                        endLayer:(NSInteger)endLayer
                        callback:(LlamaShardCallback)callback;
 
+/// Returns the number of bytes the OS is willing to give this process before
+/// it is killed for exceeding its memory limit (i.e. os_proc_available_memory).
++ (NSUInteger)availableProcessMemoryBytes;
+
 @end
 
 NS_ASSUME_NONNULL_END

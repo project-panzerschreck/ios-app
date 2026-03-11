@@ -13,6 +13,7 @@
 // usable for local testing.
 
 #import "LlamaBridge.h"
+#import <Metal/Metal.h>
 #include <os/proc.h>
 
 // Pull in llama.cpp public API.  The header will be available once the
@@ -21,6 +22,7 @@
 #if __has_include(<llama.h>)
   #include <llama.h>
   #include <ggml.h>
+  #include <ggml-opt.h>
   #define LLAMA_AVAILABLE 1
 #else
   #define LLAMA_AVAILABLE 0
@@ -337,7 +339,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     }
 
     // ── prefill (batch decode prompt) ─────────────────────────────────────────
-    llama_kv_self_clear(_ctx);
+    llama_memory_clear(llama_get_memory(_ctx), false);
 
     llama_batch batch = llama_batch_init(512, 0, 1);
     for (int i = 0; i < (int)promptTokens.size(); i++) {
@@ -416,28 +418,38 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     NSLog(@"[LlamaBridge] RPC server not available – rebuild with GGML_RPC=ON (see scripts/build-ggml-ios.sh)");
     return;
 #else
-    // Prefer Metal for GPU acceleration; fall back to CPU if Metal is unavailable.
-    // Metal is excluded on the simulator because ggml-metal.xcframework ships a
-    // symbol-stub slice there (no real Metal implementation).
-    ggml_backend_t backend = nullptr;
+    // Look up the device handle directly — do NOT call ggml_backend_*_init() here.
+    // ggml_backend_rpc_start_server() calls ggml_backend_dev_init() internally, so
+    // calling init() ourselves first and then freeing causes a double-init: the
+    // second Metal init fails to allocate its buffer pool and returns null, which
+    // the RPC server then dereferences → EXC_BAD_ACCESS at 0x10.
+    ggml_backend_dev_t dev = nullptr;
 #if !TARGET_OS_SIMULATOR && __has_include(<ggml-metal.h>)
-    backend = ggml_backend_metal_init();
+    // Use the GGML function which runs the check inside ggml-metal-device.m
+    // where Metal.h is properly set up.  The inline MTLCreateSystemDefaultDevice()
+    // check done from a Swift detached-task background thread was unreliable on
+    // some devices (e.g. iPhone 13 / A15 incorrectly returning false).
+    if (ggml_backend_metal_has_simdgroup_reduction()) {
+        dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    } else {
+        NSLog(@"[LlamaBridge] GPU lacks simdgroup reduction (pre-A15). Using CPU backend for RPC server.");
+    }
 #endif
-    if (!backend) {
-        backend = ggml_backend_cpu_init();
+    if (!dev) {
+        dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    }
+    if (!dev) {
+        NSLog(@"[LlamaBridge] No GGML backend device found, cannot start RPC server.");
+        return;
     }
 
     const char *ep   = endpoint.UTF8String;
     const char *cdir = cacheDir ? cacheDir.UTF8String : nullptr;
-    size_t free_b    = freeMB  * 1024 * 1024;
-    size_t total_b   = totalMB * 1024 * 1024;
 
     NSLog(@"[LlamaBridge] Starting GGML RPC server at %@ with %lu threads…", endpoint, (unsigned long)threads);
     // Blocks until the server is stopped externally (process kill or socket close).
-    ggml_backend_rpc_start_server(backend, ep, cdir, free_b, total_b);
+    ggml_backend_rpc_start_server(ep, cdir, (size_t)threads, 1, &dev);
     NSLog(@"[LlamaBridge] GGML RPC server stopped.");
-
-    ggml_backend_free(backend);
 #endif
 }
 
@@ -512,7 +524,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 
         if (isPrefill) {
             // New generation session: clear KV cache and reset position counter.
-            llama_kv_self_clear(_ctx);
+            llama_memory_clear(llama_get_memory(_ctx), false);
             _shardNPast = 0;
         }
 
@@ -520,7 +532,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
         llama_batch batch = llama_batch_init((int)tokens.size(), 0, 1);
         for (int i = 0; i < (int)tokens.size(); i++) {
             BOOL wantsLogits = (i == (int)tokens.size() - 1);
-            llama_batch_add_token(batch, tokens[i], _shardNPast + i, {0}, wantsLogits);
+            llama_batch_add_token(batch, tokens[i], (llama_pos)(_shardNPast + i), {0}, wantsLogits);
         }
         int rc = llama_decode(_ctx, batch);
         llama_batch_free(batch);
@@ -636,6 +648,10 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
         callback([outState copy], tokenCount, nEmbd, YES);
     }
 #endif
+}
+
++ (NSUInteger)availableProcessMemoryBytes {
+    return (NSUInteger)os_proc_available_memory();
 }
 
 @end

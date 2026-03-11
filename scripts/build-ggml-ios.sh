@@ -32,7 +32,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-LLAMA_DIR="$PROJECT_DIR/vendor/llama.cpp"
+LLAMA_DIR="$PROJECT_DIR/../llama.cpp"
 BUILD_BASE="$PROJECT_DIR/build-llama"
 OUTPUT_DIR="$PROJECT_DIR/Frameworks"
 IOS_MIN="15.6"
@@ -98,15 +98,18 @@ build_slice() {
         2>&1 | tail -5
 
     log "── Building $name …"
-    # Pass SDK and arch overrides to xcodebuild via cmake
-    cmake --build "$build_dir" \
-        --config Release \
-        --parallel "$(sysctl -n hw.logicalcpu)" \
-        -- \
-        -sdk "$sdk" \
-        ARCHS="$archs" \
-        ONLY_ACTIVE_ARCH=NO \
-        2>&1 | grep -E "(error:|Build succeeded|FAILED|warning: (deprecated|unused))" || true
+    # Build only library targets — executables have no bundle ID on iOS
+    for target in ggml ggml-base ggml-cpu ggml-blas ggml-rpc ggml-metal llama; do
+        cmake --build "$build_dir" \
+            --config Release \
+            --target "$target" \
+            --parallel "$(sysctl -n hw.logicalcpu)" \
+            -- \
+            -sdk "$sdk" \
+            ARCHS="$archs" \
+            ONLY_ACTIVE_ARCH=NO \
+            2>&1 | grep -E "(error:|Build succeeded|FAILED)" || true
+    done
 }
 
 build_slice "iphoneos"      "arm64"          "ON"  "iphoneos"

@@ -14,6 +14,10 @@
 import Foundation
 import Combine
 import Network
+import Darwin
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // ── Generation result ─────────────────────────────────────────────────────────
 
@@ -206,11 +210,21 @@ final class InferenceEngine: ObservableObject {
             }
 
             let (freeMB, totalMB) = Self.deviceMemoryMB()
-            await MainActor.run { self.rpcServerState = .running(endpoint: endpoint) }
+            await MainActor.run {
+                self.rpcServerState = .running(endpoint: endpoint)
+#if canImport(UIKit)
+                UIApplication.shared.isIdleTimerDisabled = true
+#endif
+            }
             let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.path
             // Blocking call – returns only when the server socket is closed.
             bridge.startRPCServer(endpoint, cacheDir: cacheDir, freeMB: freeMB, totalMB: totalMB, threads: UInt(threads))
-            await MainActor.run { self.rpcServerState = .idle }
+            await MainActor.run {
+                self.rpcServerState = .idle
+#if canImport(UIKit)
+                UIApplication.shared.isIdleTimerDisabled = false
+#endif
+            }
         }
     }
 
@@ -241,17 +255,49 @@ final class InferenceEngine: ObservableObject {
     private func startDiscoveryPing(discoveryIp: String, discoveryPort: Int, servicePort: Int) {
         stopDiscoveryPing()
         discoveryTask = Task.detached {
-            let urlString = "http://\(discoveryIp):\(discoveryPort)/announce?port=\(servicePort)"
-            guard let url = URL(string: urlString) else { return }
-            
+            // Enable battery monitoring for the lifetime of this task.
+            #if canImport(UIKit)
+            await MainActor.run { UIDevice.current.isBatteryMonitoringEnabled = true }
+            #endif
+
             while !Task.isCancelled {
                 do {
+                    // Collect device info on each ping so values stay fresh.
+                    let hwModel   = Self.hardwareModel()
+                    let maxBytes  = LlamaBridge.availableProcessMemoryBytes()
+                    #if canImport(UIKit)
+                    let battery   = await MainActor.run { UIDevice.current.batteryLevel }   // 0–1 or -1
+                    #else
+                    let battery: Float = -1
+                    #endif
+                    let tempCode  = await MainActor.run { ProcessInfo.processInfo.thermalState }
+                    let tempC     = Self.thermalStateTemperature(tempCode)
+
+                    var comps = URLComponents()
+                    comps.scheme = "http"
+                    comps.host   = discoveryIp
+                    comps.port   = discoveryPort
+                    comps.path   = "/announce"
+                    var items: [URLQueryItem] = [
+                        .init(name: "port",     value: "\(servicePort)"),
+                        .init(name: "model",    value: hwModel),
+                        .init(name: "max_size", value: "\(maxBytes)"),
+                    ]
+                    if battery >= 0 {
+                        items.append(.init(name: "battery", value: String(format: "%.1f", battery * 100)))
+                    }
+                    if !tempC.isNaN {
+                        items.append(.init(name: "temperature", value: String(format: "%.1f", tempC)))
+                    }
+                    comps.queryItems = items
+                    guard let url = comps.url else { return }
+
                     var req = URLRequest(url: url)
-                    req.httpMethod = "GET"
+                    req.httpMethod  = "GET"
                     req.timeoutInterval = 5
-                    
+
                     let (data, response) = try await URLSession.shared.data(for: req)
-                    
+
                     if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let interval = json["interval"] as? Double {
@@ -264,6 +310,30 @@ final class InferenceEngine: ObservableObject {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                 }
             }
+
+            #if canImport(UIKit)
+            await MainActor.run { UIDevice.current.isBatteryMonitoringEnabled = false }
+            #endif
+        }
+    }
+
+    // Returns the hardware model identifier, e.g. "iPhone16,1".
+    private nonisolated static func hardwareModel() -> String {
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        var machine = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.machine", &machine, &size, nil, 0)
+        return String(cString: machine)
+    }
+
+    // Maps ProcessInfo.ThermalState to an approximate temperature in °C.
+    private nonisolated static func thermalStateTemperature(_ state: ProcessInfo.ThermalState) -> Double {
+        switch state {
+        case .nominal:  return 30.0
+        case .fair:     return 38.0
+        case .serious:  return 45.0
+        case .critical: return 55.0
+        @unknown default: return Double.nan
         }
     }
 
