@@ -249,10 +249,7 @@ final class InferenceEngine: ObservableObject {
         threads: Int = 4
     ) {
         guard case .idle = rpcServerState else { return }
-        let endpoint = "\(host):\(port)"
         rpcServerState = .starting
-        
-        startDiscoveryPing(discoveryIp: discoveryIp, discoveryPort: discoveryPort, servicePort: port)
 
         rpcServerTask = Task.detached(priority: .userInitiated) { [bridge] in
             if !LlamaBridge.rpcAvailable() {
@@ -264,15 +261,71 @@ final class InferenceEngine: ObservableObject {
             }
 
             let (freeMB, totalMB) = Self.deviceMemoryMB()
-            await MainActor.run {
-                self.rpcServerState = .running(endpoint: endpoint)
-#if canImport(UIKit)
-                UIApplication.shared.isIdleTimerDisabled = true
-#endif
-            }
             let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.path
-            // Blocking call – returns only when the server socket is closed.
-            bridge.startRPCServer(endpoint, cacheDir: cacheDir, freeMB: freeMB, totalMB: totalMB, threads: UInt(threads))
+
+            // Some iOS simulator/device restarts keep the previous socket alive
+            // briefly after stop. Retry on successive ports until one stays up.
+            let startupProbeWindow: UInt64 = 750_000_000
+            let maxPortAttempts = 16
+
+            for offset in 0..<maxPortAttempts {
+                if Task.isCancelled { break }
+
+                let candidatePort = port + offset
+                let endpoint = "\(host):\(candidatePort)"
+
+                await MainActor.run {
+                    self.rpcServerState = .starting
+#if canImport(UIKit)
+                    UIApplication.shared.isIdleTimerDisabled = true
+#endif
+                }
+
+                let discoveryTask = Task.detached(priority: .utility) { [weak self] in
+                    try? await Task.sleep(nanoseconds: startupProbeWindow)
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        self?.rpcServerState = .running(endpoint: endpoint)
+#if canImport(UIKit)
+                        UIApplication.shared.isIdleTimerDisabled = true
+#endif
+                        self?.startDiscoveryPing(
+                            discoveryIp: discoveryIp,
+                            discoveryPort: discoveryPort,
+                            servicePort: candidatePort
+                        )
+                    }
+                }
+
+                let startedAt = Date()
+                // Blocking call – returns only when the server socket is closed,
+                // or immediately if the port cannot be bound.
+                bridge.startRPCServer(endpoint, cacheDir: cacheDir, freeMB: freeMB, totalMB: totalMB, threads: UInt(threads))
+                let elapsed = Date().timeIntervalSince(startedAt)
+
+                discoveryTask.cancel()
+                await MainActor.run {
+                    self.stopDiscoveryPing()
+                }
+
+                await MainActor.run {
+                    self.rpcServerState = .idle
+#if canImport(UIKit)
+                    UIApplication.shared.isIdleTimerDisabled = false
+#endif
+                }
+
+                if Task.isCancelled { break }
+
+                // If the server ran for a short while, assume this attempt was
+                // successful and exit. Immediate returns are usually bind failures.
+                if elapsed >= 0.5 {
+                    return
+                }
+
+                // Otherwise keep probing the next port.
+            }
+
             await MainActor.run {
                 self.rpcServerState = .idle
 #if canImport(UIKit)
@@ -407,12 +460,14 @@ final class InferenceEngine: ObservableObject {
                              deviceID: String,
                              label: String,
                              ip: String,
-                             rpcPort: Int) async {
+                             rpcPort: Int,
+                             token: String) async {
         struct Reg: Encodable {
             let device_id, label, ip: String
             let rpc_port: Int
+            let token: String
         }
-        let body = Reg(device_id: deviceID, label: label, ip: ip, rpc_port: rpcPort)
+        let body = Reg(device_id: deviceID, label: label, ip: ip, rpc_port: rpcPort, token: token)
         guard let data = try? JSONEncoder().encode(body) else { return }
 
         var req = URLRequest(url: serverURL.appendingPathComponent("api/v1/devices/register"))
@@ -424,19 +479,20 @@ final class InferenceEngine: ObservableObject {
         do {
             let (_, _) = try await URLSession.shared.data(for: req)
             serverRegistrationStatus = "Registered with \(serverURL.host ?? serverURL.absoluteString)"
-            startKeepalive(serverURL: serverURL, deviceID: deviceID)
+            startKeepalive(serverURL: serverURL, deviceID: deviceID, token: token)
         } catch {
             serverRegistrationStatus = "Registration failed: \(error.localizedDescription)"
         }
     }
 
-    private func startKeepalive(serverURL: URL, deviceID: String) {
+    private func startKeepalive(serverURL: URL, deviceID: String, token: String) {
         stopKeepalive()
         keepaliveTask = Task {
             let url = serverURL.appendingPathComponent("api/v1/devices/\(deviceID)/keepalive")
             while !Task.isCancelled {
                 var req = URLRequest(url: url)
                 req.httpMethod = "POST"
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 req.timeoutInterval = 5
                 _ = try? await URLSession.shared.data(for: req)
                 try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 s
