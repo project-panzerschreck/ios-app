@@ -14,6 +14,7 @@
 
 #import "LlamaBridge.h"
 #import <Metal/Metal.h>
+#include <TargetConditionals.h>
 #include <os/proc.h>
 
 // Pull in llama.cpp public API.  The header will be available once the
@@ -466,7 +467,10 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 }
 
 + (NSUInteger)processAvailableMemoryBytes {
-    return (NSUInteger)os_proc_available_memory();
+#if TARGET_OS_SIMULATOR
+    return 1000ULL * 1000ULL * 1000ULL;
+#endif
+    return (NSUInteger)([NSProcessInfo processInfo].physicalMemory / 4);
 }
 
 - (void)startRPCServer:(NSString *)endpoint
@@ -709,7 +713,10 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 }
 
 + (NSUInteger)availableProcessMemoryBytes {
-    return (NSUInteger)os_proc_available_memory();
+#if TARGET_OS_SIMULATOR
+    return 1000ULL * 1000ULL * 1000ULL;
+#endif
+    return (NSUInteger)([NSProcessInfo processInfo].physicalMemory / 4);
 }
 
 @end

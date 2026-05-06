@@ -13,6 +13,7 @@
 
 import SwiftUI
 import UIKit
+import AVFoundation
 import UniformTypeIdentifiers
 
 struct InferenceView: View {
@@ -28,9 +29,23 @@ struct InferenceView: View {
     @State private var showDocPicker = false
     @State private var localModels: [URL] = []
 
+    // ── RPC worker state ──────────────────────────────────────────────────────
+    @AppStorage("rpcHost") private var rpcHost: String = "0.0.0.0"
+    @AppStorage("rpcPort") private var rpcPort: Int = 50052
+    @AppStorage("rpcDiscoveryIp") private var rpcDiscoveryIp: String = ""
+    @AppStorage("rpcDiscoveryPort") private var rpcDiscoveryPort: Int = 4917
+    @AppStorage("rpcThreads") private var rpcThreads: Int = 4
+    @AppStorage("clusterServerHost") private var clusterServerHost: String = ""
+    @AppStorage("clusterServerPort") private var clusterServerPort: Int = 4917
+    @AppStorage("clusterDeviceLabel") private var clusterDeviceLabel: String = ""
+    @AppStorage("clusterToken") private var clusterToken: String = ""
+    
+    @State private var connectionString: String = ""
     @State private var serverURL:  String = ""
     @State private var showRPC:    Bool   = true
     @State private var selectedTab: Int  = 1
+    @State private var showQRScanner: Bool = false
+    @State private var importStatus: String = ""
 
     // ── Body ──────────────────────────────────────────────────────────────────
 
@@ -66,7 +81,27 @@ struct InferenceView: View {
             .tabItem { Label("GGML RPC Worker", systemImage: "network") }
             .tag(1)
         }
-        .onAppear { refreshLocalModels() }
+        .sheet(isPresented: $showQRScanner) {
+            QRScannerSheet(
+                onCodeScanned: { code in
+                    showQRScanner = false
+                    applyConnectionConfig(from: code)
+                },
+                onFailure: { message in
+                    showQRScanner = false
+                    importStatus = message
+                }
+            )
+        }
+        .onOpenURL { incomingURL in
+            applyConnectionConfig(from: incomingURL.absoluteString)
+        }
+        .onAppear {
+            refreshLocalModels()
+            if clusterDeviceLabel.isEmpty {
+                clusterDeviceLabel = UIDeviceLabel.current
+            }
+        }
     }
 
     // ── Model section ─────────────────────────────────────────────────────────
@@ -245,8 +280,7 @@ struct InferenceView: View {
     @ViewBuilder
     private var rpcWorkerSection: some View {
         if showRPC {
-            let interfaces = ShardNetwork.allLocalIPv4s
-            let isRunning  = rpcIsRunning
+            let isRunning = rpcIsRunning
 
             // ── Endpoint card ─────────────────────────────────────────────────
             Section("Endpoints") {
@@ -280,11 +314,64 @@ struct InferenceView: View {
                             .foregroundStyle(Color.accentColor)
                         }
                         .padding(.vertical, 2)
+            Section {
+                TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .onSubmit { applyConnectionConfig(from: connectionString) }
+
+                Button {
+                    applyConnectionConfig(from: connectionString)
+                } label: {
+                    Label("Apply connection string", systemImage: "link")
+                }
+                .disabled(connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                TextField("Server URL", text: $serverURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .onChange(of: serverURL) { _ in
+                        syncConnectionFields(fromServerURL: serverURL)
                     }
+
+                TextField("Server host", text: $clusterServerHost)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .onChange(of: clusterServerHost) { _ in
+                        syncServerURLFromHostAndPort()
+                    }
+
+                IntStepperField("Server port", value: $clusterServerPort, in: 1...65535, disabled: false)
+                    .onChange(of: clusterServerPort) { _ in
+                        syncServerURLFromHostAndPort()
+                    }
+
+                TextField("Token", text: $clusterToken)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                Button {
+                    showQRScanner = true
+                } label: {
+                    Label("Scan QR code", systemImage: "qrcode.viewfinder")
                 }
 
-                if isRunning {
-                    Text(rpcStateLabel)
+                Button {
+                    guard let raw = UIPasteboard.general.string,
+                          !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        importStatus = "Clipboard does not contain a connection URL."
+                        return
+                    }
+                    applyConnectionConfig(from: raw)
+                } label: {
+                    Label("Import from clipboard", systemImage: "doc.on.clipboard")
+                }
+
+                if !importStatus.isEmpty {
+                    Text(importStatus)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -309,6 +396,10 @@ struct InferenceView: View {
                         .frame(maxWidth: 160)
                 }
                 IntStepperField("Discovery Port", value: $settings.discoveryPort, in: 1024...65535, disabled: isRunning)
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("Paste a rmcluster://connect URL, scan a QR code, or manually edit the host, port, and token.")
             }
 
             // ── Start / Stop ──────────────────────────────────────────────────
@@ -337,6 +428,7 @@ struct InferenceView: View {
                             threads: settings.threads,
                             deviceId: settings.deviceId
                         )
+                        registerWithServer(ip: ShardNetwork.wifiIPv4 ?? rpcDiscoveryIp)
                     } label: {
                         Label(
                             engine.rpcServerState == .starting ? "Starting…" : "Start RPC server",
@@ -345,32 +437,15 @@ struct InferenceView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(engine.rpcServerState == .starting || interfaces.isEmpty)
+                    .disabled(engine.rpcServerState == .starting)
+                }
+
+                if !engine.serverRegistrationStatus.isEmpty {
+                    Text(engine.serverRegistrationStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-
-            // ── Optional device registry ───────────────────────────────────────
-            // Section {
-            //     TextField("Registry URL  e.g. http://192.168.1.100:8080",
-            //               text: $serverURL)
-            //         .keyboardType(.URL)
-            //         .autocorrectionDisabled()
-            //         .textInputAutocapitalization(.never)
-            //     if !engine.serverRegistrationStatus.isEmpty {
-            //         Text(engine.serverRegistrationStatus)
-            //             .font(.caption)
-            //             .foregroundStyle(.secondary)
-            //     }
-            //     Button("Register this device") {
-            //         registerWithServer(ip: primaryIP ?? "")
-            //     }
-            //     .disabled(serverURL.trimmingCharacters(in: .whitespaces).isEmpty
-            //               || primaryIP == nil)
-            // } header: {
-            //     Text("Device registry (optional)")
-            // } footer: {
-            //     Text("Register with the orchestration server so coordinators can look up this device's endpoint without manually noting the IP address.")
-            // }
         }
     }
 
@@ -391,8 +466,22 @@ struct InferenceView: View {
     }
 
     private func registerWithServer(ip: String) {
-        let trimmed = serverURL.trimmingCharacters(in: .whitespaces)
-        guard let url = URL(string: trimmed) else { return }
+        let host = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = clusterToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else {
+            engine.serverRegistrationStatus = "Registration failed: missing server host"
+            return
+        }
+        guard !token.isEmpty else {
+            engine.serverRegistrationStatus = "Registration failed: missing token"
+            return
+        }
+
+        guard let url = URL(string: "http://\(host):\(clusterServerPort)") else {
+            engine.serverRegistrationStatus = "Registration failed: invalid server URL"
+            return
+        }
+
         Task {
             await engine.registerWithServer(
                 url,
@@ -400,8 +489,58 @@ struct InferenceView: View {
                 label:    UIDeviceLabel.current,
                 ip:       ip,
                 rpcPort:  settings.port
+                rpcPort:  rpcPort,
+                token:    token
             )
         }
+    }
+
+    private func applyConnectionConfig(from rawValue: String) {
+        guard let parsed = ConnectionBootstrapPayload.parse(rawValue) else {
+            importStatus = "Could not parse connection data."
+            return
+        }
+
+        connectionString = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        clusterServerHost = parsed.host
+        if let port = parsed.port {
+            clusterServerPort = port
+            rpcDiscoveryPort = port
+        }
+        if let token = parsed.token, !token.isEmpty {
+            clusterToken = token
+        }
+        if let device = parsed.device, !device.isEmpty {
+            clusterDeviceLabel = device
+        }
+
+        rpcDiscoveryIp = parsed.host
+        selectedTab = 1
+        importStatus = ""
+    }
+
+    private func syncServerURLFromHostAndPort() {
+        let trimmedHost = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty else { return }
+        serverURL = "http://\(trimmedHost):\(clusterServerPort)"
+    }
+
+    private func syncConnectionFields(fromServerURL urlText: String) {
+        let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let parsed = ConnectionBootstrapPayload.parse(trimmed) else { return }
+        clusterServerHost = parsed.host
+        if let port = parsed.port {
+            clusterServerPort = port
+            rpcDiscoveryPort = port
+        }
+        if let token = parsed.token, !token.isEmpty {
+            clusterToken = token
+        }
+        if let device = parsed.device, !device.isEmpty {
+            clusterDeviceLabel = device
+        }
+        rpcDiscoveryIp = parsed.host
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -553,4 +692,179 @@ private struct IntStepperField: View {
 #Preview {
     InferenceView()
         .environmentObject(InferenceEngine.shared)
+}
+
+private struct ConnectionBootstrapPayload {
+    let host: String
+    let port: Int?
+    let token: String?
+    let device: String?
+
+    static func parse(_ raw: String) -> ConnectionBootstrapPayload? {
+        let input = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return nil }
+
+        if let deepLink = URL(string: input),
+           deepLink.scheme?.lowercased() == "rmcluster",
+           let comps = URLComponents(url: deepLink, resolvingAgainstBaseURL: false) {
+            let query = queryMap(from: comps)
+            guard let serverValue = query["url"] ?? query["host"],
+                  let (host, embeddedPort) = parseHostAndPort(serverValue) else {
+                return nil
+            }
+
+            let explicitPort = query["port"].flatMap(Int.init)
+            return ConnectionBootstrapPayload(
+                host: host,
+                port: explicitPort ?? embeddedPort,
+                token: query["token"],
+                device: query["device"] ?? query["label"] ?? query["name"]
+            )
+        }
+
+        if let comps = URLComponents(string: input), let host = comps.host {
+            let query = queryMap(from: comps)
+            return ConnectionBootstrapPayload(
+                host: host,
+                port: comps.port ?? query["port"].flatMap(Int.init),
+                token: query["token"],
+                device: query["device"] ?? query["label"] ?? query["name"]
+            )
+        }
+
+        if let (host, port) = parseHostAndPort(input) {
+            return ConnectionBootstrapPayload(host: host, port: port, token: nil, device: nil)
+        }
+
+        return nil
+    }
+
+    private static func queryMap(from comps: URLComponents) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name.lowercased(), $0.value ?? "") })
+    }
+
+    private static func parseHostAndPort(_ value: String) -> (String, Int?)? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let withScheme = URLComponents(string: trimmed), let host = withScheme.host {
+            return (host, withScheme.port)
+        }
+
+        if let fallback = URLComponents(string: "http://\(trimmed)"), let host = fallback.host {
+            return (host, fallback.port)
+        }
+
+        return nil
+    }
+}
+
+private struct QRScannerSheet: UIViewControllerRepresentable {
+    let onCodeScanned: (String) -> Void
+    let onFailure: (String) -> Void
+
+    func makeUIViewController(context: Context) -> QRScannerViewController {
+        let controller = QRScannerViewController()
+        controller.onCodeScanned = onCodeScanned
+        controller.onFailure = onFailure
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {}
+}
+
+private final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    var onCodeScanned: ((String) -> Void)?
+    var onFailure: ((String) -> Void)?
+
+    private let captureSession = AVCaptureSession()
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        configureSession()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = view.bounds
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        startIfAuthorized()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if captureSession.isRunning {
+            captureSession.stopRunning()
+        }
+    }
+
+    private func configureSession() {
+        guard let camera = AVCaptureDevice.default(for: .video) else {
+            onFailure?("Camera unavailable on this device.")
+            return
+        }
+
+        guard let input = try? AVCaptureDeviceInput(device: camera), captureSession.canAddInput(input) else {
+            onFailure?("Failed to open camera input.")
+            return
+        }
+        captureSession.addInput(input)
+
+        let output = AVCaptureMetadataOutput()
+        guard captureSession.canAddOutput(output) else {
+            onFailure?("Failed to start QR scanner.")
+            return
+        }
+        captureSession.addOutput(output)
+        output.setMetadataObjectsDelegate(self, queue: .main)
+        output.metadataObjectTypes = [.qr]
+
+        let preview = AVCaptureVideoPreviewLayer(session: captureSession)
+        preview.videoGravity = .resizeAspectFill
+        preview.frame = view.layer.bounds
+        view.layer.addSublayer(preview)
+        previewLayer = preview
+    }
+
+    private func startIfAuthorized() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            if !captureSession.isRunning {
+                captureSession.startRunning()
+            }
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.captureSession.startRunning()
+                    } else {
+                        self?.onFailure?("Camera permission denied.")
+                    }
+                }
+            }
+        default:
+            onFailure?("Camera permission denied.")
+        }
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+              let code = object.stringValue else {
+            return
+        }
+
+        if captureSession.isRunning {
+            captureSession.stopRunning()
+        }
+        onCodeScanned?(code)
+    }
 }
