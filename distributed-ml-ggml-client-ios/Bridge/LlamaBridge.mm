@@ -55,8 +55,6 @@ static bool llama_device_has_simdgroup_reduction(void) {
 #if TARGET_OS_SIMULATOR || !defined(__arm64__)
     return false;
 #else
-#if GGML_RPC_AVAILABLE && !TARGET_OS_SIMULATOR
-static bool llama_device_has_simdgroup_reduction(void) {
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (!dev) return false;
 
@@ -70,8 +68,8 @@ static bool llama_device_has_simdgroup_reduction(void) {
     }
 #endif
     return ok;
-}
 #endif
+}
 
 #if LLAMA_AVAILABLE
 // llama_batch_add was removed from the public header in b5076.
