@@ -19,6 +19,7 @@ import UniformTypeIdentifiers
 struct InferenceView: View {
 
     @EnvironmentObject private var engine: InferenceEngine
+    @EnvironmentObject private var settings: RpcSettings
 
     // ── UI state ──────────────────────────────────────────────────────────────
     @State private var chatInput     = ""
@@ -281,6 +282,38 @@ struct InferenceView: View {
         if showRPC {
             let isRunning = rpcIsRunning
 
+            // ── Endpoint card ─────────────────────────────────────────────────
+            Section("Endpoints") {
+                if interfaces.isEmpty {
+                    Label("No network interfaces found", systemImage: "wifi.slash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(interfaces) { iface in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(isRunning ? Color.green : Color.secondary.opacity(0.35))
+                                .frame(width: 9, height: 9)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: "RPC \(iface.ip):\(settings.port)")
+                                    .font(.system(.body, design: .monospaced).bold())
+                                Text(verbatim: "Storage \(iface.ip):\(settings.storagePort)")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                Text(iface.label)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                UIPasteboard.general.string = "\(iface.ip):\(settings.port)"
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.accentColor)
+                        }
+                        .padding(.vertical, 2)
             Section {
                 TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
                     .textInputAutocapitalization(.never)
@@ -343,6 +376,26 @@ struct InferenceView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                IntStepperField("Thread count", value: $settings.threads, in: 1...64, disabled: isRunning)
+                HStack {
+                    Text("Host")
+                    Spacer()
+                    TextField("0.0.0.0", text: $settings.host)
+                        .disabled(isRunning)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 160)
+                }
+                IntStepperField("Port", value: $settings.port, in: 1024...65535, disabled: isRunning)
+                IntStepperField("Storage Port", value: $settings.storagePort, in: 1024...65535, disabled: isRunning)
+                HStack {
+                    Text("Discovery IP")
+                    Spacer()
+                    TextField("LAN IP of server", text: $settings.discoveryIp)
+                        .disabled(isRunning)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 160)
+                }
+                IntStepperField("Discovery Port", value: $settings.discoveryPort, in: 1024...65535, disabled: isRunning)
             } header: {
                 Text("Connection")
             } footer: {
@@ -367,11 +420,13 @@ struct InferenceView: View {
                 } else {
                     Button {
                         engine.startRPCServer(
-                            host: rpcHost,
-                            port: rpcPort,
-                            discoveryIp: rpcDiscoveryIp,
-                            discoveryPort: rpcDiscoveryPort,
-                            threads: rpcThreads
+                            host: settings.host,
+                            port: settings.port,
+                            storagePort: settings.storagePort,
+                            discoveryIp: settings.discoveryIp,
+                            discoveryPort: settings.discoveryPort,
+                            threads: settings.threads,
+                            deviceId: settings.deviceId
                         )
                         registerWithServer(ip: ShardNetwork.wifiIPv4 ?? rpcDiscoveryIp)
                     } label: {
@@ -430,9 +485,10 @@ struct InferenceView: View {
         Task {
             await engine.registerWithServer(
                 url,
-                deviceID: UIDeviceLabel.deviceID,
+                deviceID: settings.deviceId,
                 label:    UIDeviceLabel.current,
                 ip:       ip,
+                rpcPort:  settings.port
                 rpcPort:  rpcPort,
                 token:    token
             )
