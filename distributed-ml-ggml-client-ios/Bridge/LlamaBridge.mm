@@ -51,8 +51,10 @@
 #include <string>
 #include <cstring>
 
-#if GGML_RPC_AVAILABLE && !TARGET_OS_SIMULATOR
 static bool llama_device_has_simdgroup_reduction(void) {
+#if TARGET_OS_SIMULATOR || !defined(__arm64__)
+    return false;
+#else
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (!dev) return false;
 
@@ -66,8 +68,8 @@ static bool llama_device_has_simdgroup_reduction(void) {
     }
 #endif
     return ok;
-}
 #endif
+}
 
 #if LLAMA_AVAILABLE
 // llama_batch_add was removed from the public header in b5076.
@@ -192,7 +194,16 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 #else
     // ── load model ───────────────────────────────────────────────────────────
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 99;   // offload all layers to Metal on device
+    
+    // Gate hardware acceleration: only offload to GPU if the device supports
+    // the required Metal features (simdgroup reduction). This prevents crashes
+    // on older devices like iPhone 6 (A8) where some kernels may fail.
+    if ([LlamaBridge metalAvailable]) {
+        model_params.n_gpu_layers = 99;   // offload all layers to Metal
+    } else {
+        model_params.n_gpu_layers = 0;    // fall back to CPU (Accelerate)
+        NSLog(@"[LlamaBridge] Device does not support required Metal features. Falling back to CPU.");
+    }
 
     _model = llama_model_load_from_file(path.UTF8String, model_params);
     if (!_model) {
@@ -466,6 +477,10 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     return GGML_RPC_AVAILABLE;
 }
 
++ (BOOL)metalAvailable {
+    return llama_device_has_simdgroup_reduction();
+}
+
 + (NSUInteger)processAvailableMemoryBytes {
 #if TARGET_OS_SIMULATOR
     return 1000ULL * 1000ULL * 1000ULL;
@@ -490,11 +505,10 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     ggml_backend_dev_t dev = nullptr;
 #if !TARGET_OS_SIMULATOR && __has_include(<ggml-metal.h>)
     // Keep the old behavior: use GPU only when simdgroup reduction is available.
-    // Upstream GGML now keeps this check internal, so we mirror it with Metal APIs.
-    if (llama_device_has_simdgroup_reduction()) {
+    if ([LlamaBridge metalAvailable]) {
         dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
     } else {
-        NSLog(@"[LlamaBridge] GPU lacks simdgroup reduction. Using CPU backend for RPC server.");
+        NSLog(@"[LlamaBridge] GPU lacks required Metal features. Using CPU backend for RPC server.");
     }
 #endif
     if (!dev) {
