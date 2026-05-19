@@ -51,10 +51,10 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		BB0001002F4D1DFE003138C5 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		BB0001002F4D1DFE003138C5 /* Exceptions for "distributed-ml-ggml-client-ios" folder in "distributed-ml-ggml-client-ios" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"Info.plist",
+				Info.plist,
 			);
 			target = A30491242F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */;
 		};
@@ -64,7 +64,7 @@
 		A30491272F4D1DFE003138C5 /* distributed-ml-ggml-client-ios */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				BB0001002F4D1DFE003138C5 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				BB0001002F4D1DFE003138C5 /* Exceptions for "distributed-ml-ggml-client-ios" folder in "distributed-ml-ggml-client-ios" target */,
 			);
 			path = "distributed-ml-ggml-client-ios";
 			sourceTree = "<group>";

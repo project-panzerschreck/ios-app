@@ -281,6 +281,7 @@ struct InferenceView: View {
     private var rpcWorkerSection: some View {
         if showRPC {
             let isRunning = rpcIsRunning
+            let interfaces = ShardNetwork.allLocalIPv4s
 
             // ── Endpoint card ─────────────────────────────────────────────────
             Section("Endpoints") {
@@ -314,6 +315,10 @@ struct InferenceView: View {
                             .foregroundStyle(Color.accentColor)
                         }
                         .padding(.vertical, 2)
+                    }
+                }
+            }
+
             Section {
                 TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
                     .textInputAutocapitalization(.never)
@@ -488,8 +493,7 @@ struct InferenceView: View {
                 deviceID: settings.deviceId,
                 label:    UIDeviceLabel.current,
                 ip:       ip,
-                rpcPort:  settings.port
-                rpcPort:  rpcPort,
+                rpcPort:  settings.port,
                 token:    token
             )
         }

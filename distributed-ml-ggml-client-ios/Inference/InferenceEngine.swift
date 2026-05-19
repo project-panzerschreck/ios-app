@@ -245,13 +245,13 @@ final class InferenceEngine: ObservableObject {
     ///
     /// - Parameter port: TCP port to listen on (default 50052, same as Android team).
     func startRPCServer(
-        host: String = RpcSettings.shared.host,
-        port: Int = RpcSettings.shared.port,
-        storagePort: Int = RpcSettings.shared.storagePort,
-        discoveryIp: String = RpcSettings.shared.discoveryIp,
-        discoveryPort: Int = RpcSettings.shared.discoveryPort,
-        threads: Int = RpcSettings.shared.threads,
-        deviceId: String = RpcSettings.shared.deviceId
+        host: String,
+        port: Int,
+        storagePort: Int,
+        discoveryIp: String,
+        discoveryPort: Int,
+        threads: Int,
+        deviceId: String
         ) {
 
         guard case .idle = rpcServerState else { return }
@@ -314,7 +314,9 @@ final class InferenceEngine: ObservableObject {
                         self?.startDiscoveryPing(
                             discoveryIp: discoveryIp,
                             discoveryPort: discoveryPort,
-                            servicePort: candidatePort
+                            servicePort: candidatePort,
+                            storagePort: storagePort,
+                            deviceId: deviceId
                         )
                     }
                 }
