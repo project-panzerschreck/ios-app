@@ -39,7 +39,7 @@ struct InferenceView: View {
     @AppStorage("clusterServerPort") private var clusterServerPort: Int = 4917
     @AppStorage("clusterDeviceLabel") private var clusterDeviceLabel: String = ""
     @AppStorage("clusterToken") private var clusterToken: String = ""
-    
+
     @State private var connectionString: String = ""
     @State private var serverURL:  String = ""
     @State private var showRPC:    Bool   = true
@@ -433,7 +433,6 @@ struct InferenceView: View {
                             threads: settings.threads,
                             deviceId: settings.deviceId
                         )
-                        registerWithServer(ip: ShardNetwork.wifiIPv4 ?? rpcDiscoveryIp)
                     } label: {
                         Label(
                             engine.rpcServerState == .starting ? "Starting…" : "Start RPC server",
@@ -445,11 +444,6 @@ struct InferenceView: View {
                     .disabled(engine.rpcServerState == .starting)
                 }
 
-                if !engine.serverRegistrationStatus.isEmpty {
-                    Text(engine.serverRegistrationStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
     }
@@ -467,35 +461,6 @@ struct InferenceView: View {
         case .starting:            return "Starting…"
         case .running(let ep):     return "Listening on \(ep)"
         case .unavailable:         return "Unavailable – rebuild with GGML_RPC=ON"
-        }
-    }
-
-    private func registerWithServer(ip: String) {
-        let host = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        let token = clusterToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty else {
-            engine.serverRegistrationStatus = "Registration failed: missing server host"
-            return
-        }
-        guard !token.isEmpty else {
-            engine.serverRegistrationStatus = "Registration failed: missing token"
-            return
-        }
-
-        guard let url = URL(string: "http://\(host):\(clusterServerPort)") else {
-            engine.serverRegistrationStatus = "Registration failed: invalid server URL"
-            return
-        }
-
-        Task {
-            await engine.registerWithServer(
-                url,
-                deviceID: settings.deviceId,
-                label:    UIDeviceLabel.current,
-                ip:       ip,
-                rpcPort:  settings.port,
-                token:    token
-            )
         }
     }
 

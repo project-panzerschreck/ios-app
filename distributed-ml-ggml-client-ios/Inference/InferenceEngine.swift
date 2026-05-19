@@ -63,14 +63,12 @@ final class InferenceEngine: ObservableObject {
     @Published var generatedText: String  = ""
     @Published var tokensPerSecond: Double = 0
     @Published var rpcServerState: RPCServerState = .idle
-    @Published var serverRegistrationStatus: String = ""
     @Published var chatMessages: [ChatMessage] = []
 
     // ── nonisolated(unsafe): accessed from detached tasks, single-threaded ────
     nonisolated(unsafe) private let bridge = LlamaBridge()
     private var generationTask: Task<Void, Never>?
     private var rpcServerTask:  Task<Void, Never>?
-    private var keepaliveTask:  Task<Void, Never>?
     private var discoveryTask:  Task<Void, Never>?
     private var storageServer: StorageServer?
 
@@ -379,7 +377,6 @@ final class InferenceEngine: ObservableObject {
     func stopRPCServer() {
         rpcServerTask?.cancel()
         rpcServerTask = nil
-        stopKeepalive()
         stopDiscoveryPing()
         storageServer?.stop()
         storageServer = nil
@@ -515,60 +512,6 @@ final class InferenceEngine: ObservableObject {
     private func stopDiscoveryPing() {
         discoveryTask?.cancel()
         discoveryTask = nil
-    }
-
-    // ── Server registration / keepalive ──────────────────────────────────────
-
-    /// Register this device with the orchestration server so the operator can
-    /// retrieve the `--rpc` command without manually noting IP addresses.
-    func registerWithServer(_ serverURL: URL,
-                             deviceID: String,
-                             label: String,
-                             ip: String,
-                             rpcPort: Int,
-                             token: String) async {
-        struct Reg: Encodable {
-            let device_id, label, ip: String
-            let rpc_port: Int
-            let token: String
-        }
-        let body = Reg(device_id: deviceID, label: label, ip: ip, rpc_port: rpcPort, token: token)
-        guard let data = try? JSONEncoder().encode(body) else { return }
-
-        var req = URLRequest(url: serverURL.appendingPathComponent("api/v1/devices/register"))
-        req.httpMethod  = "POST"
-        req.httpBody    = data
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 5
-
-        do {
-            let (_, _) = try await URLSession.shared.data(for: req)
-            serverRegistrationStatus = "Registered with \(serverURL.host ?? serverURL.absoluteString)"
-            startKeepalive(serverURL: serverURL, deviceID: deviceID, token: token)
-        } catch {
-            serverRegistrationStatus = "Registration failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func startKeepalive(serverURL: URL, deviceID: String, token: String) {
-        stopKeepalive()
-        keepaliveTask = Task {
-            let url = serverURL.appendingPathComponent("api/v1/devices/\(deviceID)/keepalive")
-            while !Task.isCancelled {
-                var req = URLRequest(url: url)
-                req.httpMethod = "POST"
-                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                req.timeoutInterval = 5
-                _ = try? await URLSession.shared.data(for: req)
-                try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 s
-            }
-        }
-    }
-
-    private func stopKeepalive() {
-        keepaliveTask?.cancel()
-        keepaliveTask = nil
-        serverRegistrationStatus = ""
     }
 
     // ── Distributed shard helpers ─────────────────────────────────────────────
