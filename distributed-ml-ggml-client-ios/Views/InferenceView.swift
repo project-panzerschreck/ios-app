@@ -74,11 +74,11 @@ struct InferenceView: View {
                 List {
                     rpcWorkerSection
                 }
-                .navigationTitle("GGML RPC Worker")
+                .navigationTitle("rmcluster node")
                 .navigationBarTitleDisplayMode(.inline)
             }
             .navigationViewStyle(.stack)
-            .tabItem { Label("GGML RPC Worker", systemImage: "network") }
+            .tabItem { Label("rmcluster node", systemImage: "network") }
             .tag(1)
         }
         .sheet(isPresented: $showQRScanner) {
