@@ -320,6 +320,23 @@ struct InferenceView: View {
             }
 
             Section {
+                Button {
+                    showQRScanner = true
+                } label: {
+                    Label("Scan QR code", systemImage: "qrcode.viewfinder")
+                }
+
+                Button {
+                    guard let raw = UIPasteboard.general.string,
+                          !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        importStatus = "Clipboard does not contain a connection URL."
+                        return
+                    }
+                    applyConnectionConfig(from: raw)
+                } label: {
+                    Label("Import from clipboard", systemImage: "doc.on.clipboard")
+                }
+
                 TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -357,23 +374,6 @@ struct InferenceView: View {
                 TextField("Token", text: $clusterToken)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-
-                Button {
-                    showQRScanner = true
-                } label: {
-                    Label("Scan QR code", systemImage: "qrcode.viewfinder")
-                }
-
-                Button {
-                    guard let raw = UIPasteboard.general.string,
-                          !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                        importStatus = "Clipboard does not contain a connection URL."
-                        return
-                    }
-                    applyConnectionConfig(from: raw)
-                } label: {
-                    Label("Import from clipboard", systemImage: "doc.on.clipboard")
-                }
 
                 if !importStatus.isEmpty {
                     Text(importStatus)
