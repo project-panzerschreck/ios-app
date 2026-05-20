@@ -13,9 +13,13 @@
 // usable for local testing.
 
 #import "LlamaBridge.h"
-#import <Metal/Metal.h>
 #include <TargetConditionals.h>
-#include <os/proc.h>
+#include <dlfcn.h>
+#include <mach/mach.h>
+
+#if !TARGET_OS_SIMULATOR && defined(__arm64__)
+#import <Metal/Metal.h>
+#endif
 
 // Pull in llama.cpp public API.  The header will be available once the
 // XCFramework is added to the target.  Guard it so the file can still
@@ -50,6 +54,65 @@
 #include <vector>
 #include <string>
 #include <cstring>
+
+static uint64_t llama_bridge_current_footprint_bytes(void) {
+    mach_task_basic_info_data_t basicInfo;
+    mach_msg_type_number_t basicCount = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&basicInfo, &basicCount) == KERN_SUCCESS) {
+        return (uint64_t)basicInfo.resident_size;
+    }
+    return 0;
+}
+
+static uint64_t llama_bridge_estimated_system_available_bytes(void) {
+    vm_size_t pageSize = 0;
+    host_page_size(mach_host_self(), &pageSize);
+    if (pageSize == 0) {
+        pageSize = 4096;
+    }
+
+    vm_statistics_data_t stats;
+    mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+    if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&stats, &count) != KERN_SUCCESS) {
+        return 0;
+    }
+
+    uint64_t reclaimablePages = (uint64_t)stats.free_count + (uint64_t)stats.inactive_count;
+    return reclaimablePages * (uint64_t)pageSize;
+}
+
+static uint64_t llama_bridge_os_proc_available_memory_bytes(void) {
+    typedef size_t (*os_proc_available_memory_fn)(void);
+    static os_proc_available_memory_fn fn = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        fn = (os_proc_available_memory_fn)dlsym(RTLD_DEFAULT, "os_proc_available_memory");
+    });
+    return fn ? (uint64_t)fn() : 0;
+}
+
+static uint64_t llama_bridge_estimated_process_budget_bytes(void) {
+#if TARGET_OS_SIMULATOR
+    return 1000ULL * 1000ULL * 1000ULL;
+#else
+    const uint64_t physical = (uint64_t)[NSProcessInfo processInfo].physicalMemory;
+    const uint64_t footprint = llama_bridge_current_footprint_bytes();
+    const uint64_t osAvailable = llama_bridge_os_proc_available_memory_bytes();
+    if (osAvailable > 0) {
+        return footprint + osAvailable;
+    }
+
+    // iOS 10 fallback: estimate how much reclaimable memory the system has,
+    // keep a healthy reserve for the OS, and clamp to a conservative
+    // per-process ceiling rather than full installed RAM.
+    const uint64_t systemAvailable = llama_bridge_estimated_system_available_bytes();
+    const uint64_t reserve = MIN(128ULL * 1024ULL * 1024ULL, physical / 8ULL);
+    const uint64_t headroom = systemAvailable > reserve ? (systemAvailable - reserve) : 0;
+    const uint64_t conservativeCap = physical / 2ULL;
+    const uint64_t budget = footprint + headroom;
+    return MIN(conservativeCap, budget);
+#endif
+}
 
 static bool llama_device_has_simdgroup_reduction(void) {
 #if TARGET_OS_SIMULATOR || !defined(__arm64__)
@@ -89,6 +152,16 @@ static inline void llama_batch_add_token(
     }
     batch.logits  [batch.n_tokens] = logits;
     batch.n_tokens++;
+}
+
+static inline void llama_bridge_memory_clear(struct llama_context * ctx) {
+#if defined(LLAMA_STATE_SEQ_FLAGS_SWA_ONLY)
+    // Newer llama.cpp memory API, used by llama.cpp-rpc.
+    llama_memory_clear(llama_get_memory(ctx), false);
+#else
+    // Older public API keeps context-owned KV cache helpers.
+    llama_kv_self_clear(ctx);
+#endif
 }
 #endif
 
@@ -411,7 +484,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     }
 
     // ── prefill (batch decode prompt) ─────────────────────────────────────────
-    llama_memory_clear(llama_get_memory(_ctx), false);
+    llama_bridge_memory_clear(_ctx);
 
     llama_batch batch = llama_batch_init(512, 0, 1);
     for (int i = 0; i < (int)promptTokens.size(); i++) {
@@ -482,10 +555,13 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 }
 
 + (NSUInteger)processAvailableMemoryBytes {
-#if TARGET_OS_SIMULATOR
-    return 1000ULL * 1000ULL * 1000ULL;
-#endif
-    return (NSUInteger)([NSProcessInfo processInfo].physicalMemory / 4);
+    const uint64_t footprint = llama_bridge_current_footprint_bytes();
+    const uint64_t budget = llama_bridge_estimated_process_budget_bytes();
+    return (NSUInteger)(budget > footprint ? (budget - footprint) : 0);
+}
+
++ (NSUInteger)processMemoryBudgetBytes {
+    return (NSUInteger)llama_bridge_estimated_process_budget_bytes();
 }
 
 - (void)startRPCServer:(NSString *)endpoint
@@ -524,7 +600,19 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 
     NSLog(@"[LlamaBridge] Starting GGML RPC server at %@ with %lu threads…", endpoint, (unsigned long)threads);
     // Blocks until the server is stopped externally (process kill or socket close).
+#if defined(RPC_PROTO_MAJOR_VERSION)
     ggml_backend_rpc_start_server(ep, cdir, (size_t)threads, 1, &dev);
+#else
+    ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
+    if (!backend) {
+        NSLog(@"[LlamaBridge] Failed to initialize GGML backend for RPC server.");
+        return;
+    }
+    const size_t freeBytes  = (size_t)freeMB * 1024ULL * 1024ULL;
+    const size_t totalBytes = (size_t)totalMB * 1024ULL * 1024ULL;
+    ggml_backend_rpc_start_server(backend, ep, cdir, freeBytes, totalBytes);
+    ggml_backend_free(backend);
+#endif
     NSLog(@"[LlamaBridge] GGML RPC server stopped.");
 #endif
 }
@@ -600,7 +688,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 
         if (isPrefill) {
             // New generation session: clear KV cache and reset position counter.
-            llama_memory_clear(llama_get_memory(_ctx), false);
+            llama_bridge_memory_clear(_ctx);
             _shardNPast = 0;
         }
 
@@ -727,10 +815,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 }
 
 + (NSUInteger)availableProcessMemoryBytes {
-#if TARGET_OS_SIMULATOR
-    return 1000ULL * 1000ULL * 1000ULL;
-#endif
-    return (NSUInteger)([NSProcessInfo processInfo].physicalMemory / 4);
+    return [self processAvailableMemoryBytes];
 }
 
 @end

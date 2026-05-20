@@ -12,6 +12,7 @@ build-xcode/
 build-xcode-sim/
 # Downloaded models
 Models/*.gguf
+build/
 
 # Xcode derived data / indexes
 xcuserdata/
@@ -26,3 +27,38 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Xcode build folders, caches, and temporary files
+Build/
+Debug-iphonesimulator/
+CompilationCache.noindex/
+Index.noindex/
+Logs/
+ModuleCache.noindex/
+SDKStatCaches.noindex/
+EagerLinkingTBDs/
+*.xcarchive
+
+# Xcode user data and workspace files
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/contents.xcworkspacedata
+
+# Swift package manager
+Packages/
+.build/
+
+# CocoaPods / Carthage / Fastlane
+Pods/
+Carthage/Build/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/metadata/
+
+# IDEs
+.idea/
+*.iml
+
+.theos/
+armv7-rebuild-ios10/
+.ipa-payload/

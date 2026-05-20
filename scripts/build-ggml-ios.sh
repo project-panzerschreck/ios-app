@@ -32,7 +32,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-LLAMA_DIR="$PROJECT_DIR/../llama.cpp"
+if [[ -d "$PROJECT_DIR/../llama.cpp-rpc/.git" ]]; then
+    DEFAULT_LLAMA_DIR="$PROJECT_DIR/../llama.cpp-rpc"
+else
+    DEFAULT_LLAMA_DIR="$PROJECT_DIR/../llama.cpp"
+fi
+LLAMA_DIR="${LLAMA_DIR:-$DEFAULT_LLAMA_DIR}"
 BUILD_BASE="$PROJECT_DIR/build-llama"
 OUTPUT_DIR="$PROJECT_DIR/Frameworks"
 IOS_MIN="15.6"

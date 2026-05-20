@@ -1,0 +1,8 @@
+// Copy one of the per-person presets to Signing.local.xcconfig:
+//   cp Config/Signing.ajzhou.xcconfig Config/Signing.local.xcconfig
+//   cp Config/Signing.sandeep.xcconfig Config/Signing.local.xcconfig
+//
+// Or edit these values manually. Find your Team ID in
+// Xcode > Settings > Accounts > Team details.
+LOCAL_DEVELOPMENT_TEAM = YOURTEAMID
+APP_BUNDLE_IDENTIFIER = com.yourname.distributed-ml-ggml-client-ios

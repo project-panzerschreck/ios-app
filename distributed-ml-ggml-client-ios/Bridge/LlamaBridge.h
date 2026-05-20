@@ -137,10 +137,14 @@ typedef void (^LlamaShardCallback)(NSData *hiddenState,
 /// Returns YES if the device supports the Metal features required by llama.cpp.
 + (BOOL)metalAvailable;
 
-/// Bytes the current process can still allocate before iOS jetsam-kills it.
-/// Uses os_proc_available_memory() — more accurate than system-wide free pages
-/// because it reflects the per-process limit enforced by the kernel.
+/// Estimated bytes the current process can still allocate before iOS is likely
+/// to jetsam-kill it. Uses os_proc_available_memory() when available and
+/// otherwise falls back to a conservative iOS 10-safe estimate.
 + (NSUInteger)processAvailableMemoryBytes;
+
+/// Estimated total process memory budget for worker tasks. This is a
+/// conservative ceiling rather than installed device RAM.
++ (NSUInteger)processMemoryBudgetBytes;
 
 /// Start the GGML RPC server.  This method BLOCKS until the server stops;
 /// call it from a background thread.
@@ -199,7 +203,8 @@ typedef void (^LlamaShardCallback)(NSData *hiddenState,
                        callback:(LlamaShardCallback)callback;
 
 /// Returns the number of bytes the OS is willing to give this process before
-/// it is killed for exceeding its memory limit (i.e. os_proc_available_memory).
+/// it is killed for exceeding its memory limit, or a conservative estimate on
+/// older systems without os_proc_available_memory().
 + (NSUInteger)availableProcessMemoryBytes;
 
 @end

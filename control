@@ -1,0 +1,9 @@
+Package: com.panzerschreck.rmcluster-node
+Name: rmcluster node
+Depends: firmware (>= 10.3)
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Legacy UIKit GGML RPC worker app for iOS 10.3 armv7/armv7s.
+Maintainer: OpenAI Codex
+Author: OpenAI Codex
+Section: Applications
