@@ -304,12 +304,13 @@ final class InferenceEngine: ObservableObject {
                 let discoveryTask = Task.detached(priority: .utility) { [weak self] in
                     try? await Task.sleep(nanoseconds: startupProbeWindow)
                     guard !Task.isCancelled else { return }
+                    guard let self else { return }
                     await MainActor.run {
-                        self?.rpcServerState = .running(endpoint: endpoint)
+                        self.rpcServerState = .running(endpoint: endpoint)
 #if canImport(UIKit)
                         UIApplication.shared.isIdleTimerDisabled = true
 #endif
-                        self?.startDiscoveryPing(
+                        self.startDiscoveryPing(
                             discoveryIp: discoveryIp,
                             discoveryPort: discoveryPort,
                             servicePort: candidatePort,
