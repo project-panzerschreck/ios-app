@@ -108,7 +108,7 @@ struct InferenceView: View {
 
     @ViewBuilder
     private var modelSection: some View {
-        Section("Model") {
+        Section(header: Text("Model")) {
             switch engine.modelState {
             case .unloaded:
                 if localModels.isEmpty {
@@ -126,13 +126,13 @@ struct InferenceView: View {
                     Button { showDocPicker = true } label: {
                         Label("Load other…", systemImage: "doc.badge.plus")
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
                 }
 
             case .loading:
                 HStack {
                     ProgressView()
-                    Text("Loading model…").foregroundStyle(.secondary)
+                    Text("Loading model…").foregroundColor(.secondary)
                 }
 
             case .ready(let name, let nLayers):
@@ -148,28 +148,27 @@ struct InferenceView: View {
                     }
                 }
                 .padding(.vertical, 2)
-                Button(role: .destructive) { engine.unloadModel() } label: {
+                Button { engine.unloadModel() } label: {
                     Label("Unload model", systemImage: "eject")
                 }
+                .foregroundColor(.red)
 
             case .generating:
                 HStack {
                     ProgressView()
-                    Text("Generating…").foregroundStyle(.secondary)
+                    Text("Generating…").foregroundColor(.secondary)
                     Spacer()
                     if engine.tokensPerSecond > 0 {
                         Text(String(format: "%.1f tok/s", engine.tokensPerSecond))
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                     }
                     Button("Stop") { engine.cancelGeneration() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(.red)
+                        .foregroundColor(.red)
                 }
 
             case .error(let msg):
-                Label(msg, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                Label(msg, systemImage: "exclamationmark.triangle").foregroundColor(.red)
                 Button("Try again") { showDocPicker = true }
             }
         }
@@ -186,15 +185,14 @@ struct InferenceView: View {
     private var chatSection: some View {
         // Message history
         if !engine.chatMessages.isEmpty {
-            Section("Conversation") {
+            Section(header: Text("Conversation")) {
                 ForEach(engine.chatMessages) { msg in
                     VStack(alignment: msg.role == "user" ? .trailing : .leading, spacing: 2) {
                         Text(msg.role == "user" ? "You" : "Assistant")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                         Text(msg.content.isEmpty ? "…" : msg.content)
                             .font(.body)
-                            .textSelection(.enabled)
                             .frame(maxWidth: .infinity,
                                    alignment: msg.role == "user" ? .trailing : .leading)
                     }
@@ -205,7 +203,7 @@ struct InferenceView: View {
                         Spacer()
                         Text(String(format: "%.1f tok/s", engine.tokensPerSecond))
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -239,7 +237,7 @@ struct InferenceView: View {
                 } label: {
                     Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(
+                        .foregroundColor(
                             chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isGenerating
                                 ? Color.secondary : Color.accentColor
                         )
@@ -249,7 +247,7 @@ struct InferenceView: View {
         }
 
         // Parameters
-        Section("Parameters") {
+        Section(header: Text("Parameters")) {
             HStack {
                 Text("Max tokens")
                 Spacer()
@@ -265,12 +263,13 @@ struct InferenceView: View {
         // Clear
         if !engine.chatMessages.isEmpty {
             Section {
-                Button(role: .destructive) {
+                Button {
                     engine.clearChat()
                 } label: {
                     Label("Clear conversation", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
+                .foregroundColor(.red)
             }
         }
     }
@@ -284,11 +283,11 @@ struct InferenceView: View {
             let interfaces = ShardNetwork.allLocalIPv4s
 
             // ── Endpoint card ─────────────────────────────────────────────────
-            Section("Endpoints") {
+            Section(header: Text("Endpoints")) {
                 if interfaces.isEmpty {
                     Label("No network interfaces found", systemImage: "wifi.slash")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                 } else {
                     ForEach(interfaces) { iface in
                         HStack(spacing: 12) {
@@ -299,11 +298,11 @@ struct InferenceView: View {
                                 Text(verbatim: "RPC \(iface.ip):\(settings.port)")
                                     .font(.system(.body, design: .monospaced).bold())
                                 Text(verbatim: "Storage \(iface.ip):\(settings.storagePort)")
-                                    .font(.caption2.monospaced())
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundColor(.secondary)
                                 Text(iface.label)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundColor(.secondary)
                             }
                             Spacer()
                             Button {
@@ -312,7 +311,7 @@ struct InferenceView: View {
                                 Image(systemName: "doc.on.doc")
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundColor(Color.accentColor)
                         }
                         .padding(.vertical, 2)
                     }
@@ -338,10 +337,9 @@ struct InferenceView: View {
                 }
 
                 TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
                     .keyboardType(.URL)
-                    .onSubmit { applyConnectionConfig(from: connectionString) }
 
                 Button {
                     applyConnectionConfig(from: connectionString)
@@ -351,16 +349,16 @@ struct InferenceView: View {
                 .disabled(connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 TextField("Server URL", text: $serverURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
                     .keyboardType(.URL)
                     .onChange(of: serverURL) { _ in
                         syncConnectionFields(fromServerURL: serverURL)
                     }
 
                 TextField("Server host", text: $clusterServerHost)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
                     .keyboardType(.URL)
                     .onChange(of: clusterServerHost) { _ in
                         syncServerURLFromHostAndPort()
@@ -372,13 +370,13 @@ struct InferenceView: View {
                     }
 
                 TextField("Token", text: $clusterToken)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
 
                 if !importStatus.isEmpty {
                     Text(importStatus)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                 }
 
                 IntStepperField("Thread count", value: $settings.threads, in: 1...64, disabled: isRunning)
@@ -412,16 +410,15 @@ struct InferenceView: View {
                 if case .unavailable(let msg) = engine.rpcServerState {
                     Label(msg, systemImage: "exclamationmark.triangle")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundColor(.red)
                 } else if isRunning {
-                    Button(role: .destructive) {
+                    Button {
                         engine.stopRPCServer()
                     } label: {
                         Label("Stop RPC server", systemImage: "stop.circle")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .foregroundColor(.red)
                 } else {
                     Button {
                         engine.startRPCServer(
@@ -440,7 +437,6 @@ struct InferenceView: View {
                         )
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
                     .disabled(engine.rpcServerState == .starting)
                 }
 
@@ -559,10 +555,13 @@ private struct StatChip: View {
     let label: String
     var body: some View {
         Text(label)
-            .font(.caption2.monospaced())
+            .font(.system(.caption2, design: .monospaced))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(.quaternary, in: Capsule())
+            .background(
+                Capsule()
+                    .fill(Color(UIColor.quaternarySystemFill))
+            )
     }
 }
 
@@ -612,7 +611,6 @@ private struct IntStepperField: View {
     let disabled: Bool
 
     @State private var text: String = ""
-    @FocusState private var focused: Bool
 
     init(_ label: String, value: Binding<Int>, in range: ClosedRange<Int>, disabled: Bool) {
         self.label    = label
@@ -630,13 +628,12 @@ private struct IntStepperField: View {
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 64)
-                .focused($focused)
                 .disabled(disabled)
-                .onChange(of: focused) { isFocused in
-                    if !isFocused { commit() }
+                .onChange(of: text) { _ in
+                    commitIfValid()
                 }
                 .onChange(of: value) { newVal in
-                    if !focused { text = String(newVal) }
+                    if text != String(newVal) { text = String(newVal) }
                 }
             Stepper("", value: $value, in: range, step: 1)
                 .labelsHidden()
@@ -647,20 +644,20 @@ private struct IntStepperField: View {
         }
     }
 
-    private func commit() {
-        if let parsed = Int(text), range.contains(parsed) {
+    private func commitIfValid() {
+        if let parsed = Int(text), range.contains(parsed), parsed != value {
             value = parsed
-        } else {
-            text = String(value)
         }
     }
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 
-#Preview {
-    InferenceView()
-        .environmentObject(InferenceEngine.shared)
+struct InferenceView_Previews: PreviewProvider {
+    static var previews: some View {
+        InferenceView()
+            .environmentObject(InferenceEngine.shared)
+    }
 }
 
 private struct ConnectionBootstrapPayload {

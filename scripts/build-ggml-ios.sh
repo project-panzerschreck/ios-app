@@ -32,10 +32,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-LLAMA_DIR="$PROJECT_DIR/../llama.cpp"
+LLAMA_DIR="$PROJECT_DIR/../llama.cpp-rpc"
 BUILD_BASE="$PROJECT_DIR/build-llama"
 OUTPUT_DIR="$PROJECT_DIR/Frameworks"
-IOS_MIN="15.6"
+IOS_MIN="14.7"
 
 # ── Pin a specific llama.cpp release ─────────────────────────────────────────
 # Update this tag to upgrade.  Find tags at https://github.com/ggml-org/llama.cpp/tags
@@ -43,6 +43,7 @@ LLAMA_TAG="b5076"
 
 log()  { echo "[build-ggml-ios] $*"; }
 die()  { echo "[build-ggml-ios] ERROR: $*" >&2; exit 1; }
+NPROC="${NPROC:-8}"
 
 # ── Dependency checks ─────────────────────────────────────────────────────────
 command -v cmake       >/dev/null 2>&1 || die "cmake not found – run: brew install cmake"
@@ -98,12 +99,19 @@ build_slice() {
         2>&1 | tail -5
 
     log "── Building $name …"
-    # Build only library targets — executables have no bundle ID on iOS
-    for target in ggml ggml-base ggml-cpu ggml-blas ggml-rpc ggml-metal llama; do
+    # Build only library targets — executables have no bundle ID on iOS.
+    # The simulator slice intentionally disables Metal, so there is no
+    # ggml-metal target to build there; we generate a simulator stub later.
+    local targets=(ggml ggml-base ggml-cpu ggml-blas ggml-rpc llama)
+    if [[ "$metal" == "ON" ]]; then
+        targets+=(ggml-metal)
+    fi
+
+    for target in "${targets[@]}"; do
         cmake --build "$build_dir" \
             --config Release \
             --target "$target" \
-            --parallel "$(sysctl -n hw.logicalcpu)" \
+            --parallel "$NPROC" \
             -- \
             -sdk "$sdk" \
             ARCHS="$archs" \
