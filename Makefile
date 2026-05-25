@@ -1,11 +1,14 @@
-TARGET := iphone:clang:10.3:10.3
-ARCHS := armv7 armv7s
+TARGET := iphone:clang:12.0:12.0
+ARCHS := arm64
 INSTALL_TARGET_PROCESSES = rmclusternode
 PACKAGE_VERSION := 1.0.0
 ARMV7_REBUILD_DIR := $(CURDIR)/armv7-rebuild-ios10
 ARMV7_LIB_DIR := $(ARMV7_REBUILD_DIR)/lib
 ARMV7_VENDOR_DIR := $(ARMV7_REBUILD_DIR)/vendor/llama.cpp
 ARMV7_MANIFEST := $(ARMV7_REBUILD_DIR)/manifest.txt
+ARM64_XCFRAMEWORK_DIR := $(CURDIR)/Frameworks
+ARM64_LLAMA_INCLUDE_DIR := $(CURDIR)/../llama.cpp-rpc/include
+ARM64_GGML_INCLUDE_DIR := $(CURDIR)/../llama.cpp-rpc/ggml/include
 IPA_OUTPUT_DIR := $(CURDIR)/packages
 IPA_PAYLOAD_DIR := $(CURDIR)/.ipa-payload
 MODULE_CACHE_DIR := $(CURDIR)/.theos/module-cache
@@ -13,16 +16,21 @@ LEGACY_TOOLCHAIN_BIN ?= $(HOME)/ios-legacy-toolchain/bin
 LEGACY_TOOLCHAIN_LIBCXX ?= $(HOME)/ios-legacy-toolchain/include/c++/v1
 IOS10_SDK_ROOT ?= $(HOME)/theos/sdks/iPhoneOS10.3.sdk
 IOS10_SDK_LIB_DIR := $(IOS10_SDK_ROOT)/usr/lib
+IOS16_SDK_ROOT ?= $(HOME)/theos/sdks/iPhoneOS16.5.sdk
 
 THEOS ?= $(HOME)/theos
 ifeq ($(wildcard $(THEOS)/makefiles/common.mk),)
 $(error Set THEOS to your Theos root; expected $(THEOS)/makefiles/common.mk)
 endif
 
+ifeq ($(ARCHS),arm64)
+PREFIX :=
+else
 ifeq ($(wildcard $(LEGACY_TOOLCHAIN_BIN)/clang),)
 $(warning Legacy toolchain not found at $(LEGACY_TOOLCHAIN_BIN); Theos will fall back to the active Xcode toolchain)
 else
 PREFIX ?= $(LEGACY_TOOLCHAIN_BIN)/
+endif
 endif
 
 ifneq ($(wildcard $(IOS10_SDK_ROOT)),$(IOS10_SDK_ROOT))
@@ -32,11 +40,20 @@ SYSROOT ?= $(IOS10_SDK_ROOT)
 ISYSROOT ?= $(IOS10_SDK_ROOT)
 endif
 
+ifeq ($(ARCHS),arm64)
+ifeq ($(wildcard $(IOS16_SDK_ROOT)),$(IOS16_SDK_ROOT))
+SYSROOT := $(IOS16_SDK_ROOT)
+ISYSROOT := $(IOS16_SDK_ROOT)
+endif
+endif
+
 include $(THEOS)/makefiles/common.mk
 
+ifneq ($(ARCHS),arm64)
 ifneq ($(wildcard $(LEGACY_TOOLCHAIN_BIN)/clang),)
 override TARGET_LD = $(CURDIR)/scripts/legacy-link.sh
 export TARGET_LD
+endif
 endif
 
 APPLICATION_NAME = rmclusternode
@@ -57,6 +74,29 @@ rmclusternode_FILES = \
 rmclusternode_FRAMEWORKS = UIKit Foundation AVFoundation Metal Accelerate
 rmclusternode_PRIVATE_FRAMEWORKS =
 rmclusternode_LIBRARIES = c++ c++abi
+
+ifeq ($(ARCHS),arm64)
+rmclusternode_CFLAGS = \
+	-fobjc-arc \
+	-fno-modules \
+	-fmodules-cache-path=$(MODULE_CACHE_DIR) \
+	-I$(ARM64_LLAMA_INCLUDE_DIR) \
+	-I$(ARM64_GGML_INCLUDE_DIR)
+rmclusternode_CCFLAGS = \
+	-std=gnu++14 \
+	-fno-modules \
+	-fmodules-cache-path=$(MODULE_CACHE_DIR) \
+	-I$(ARM64_LLAMA_INCLUDE_DIR) \
+	-I$(ARM64_GGML_INCLUDE_DIR)
+rmclusternode_LDFLAGS += \
+	$(ARM64_XCFRAMEWORK_DIR)/llama.xcframework/ios-arm64/libllama.a \
+	$(ARM64_XCFRAMEWORK_DIR)/ggml.xcframework/ios-arm64/libggml.a \
+	$(ARM64_XCFRAMEWORK_DIR)/ggml-base.xcframework/ios-arm64/libggml-base.a \
+	$(ARM64_XCFRAMEWORK_DIR)/ggml-cpu.xcframework/ios-arm64/libggml-cpu.a \
+	$(ARM64_XCFRAMEWORK_DIR)/ggml-blas.xcframework/ios-arm64/libggml-blas.a \
+	$(ARM64_XCFRAMEWORK_DIR)/ggml-rpc.xcframework/ios-arm64/libggml-rpc.a \
+	$(ARM64_XCFRAMEWORK_DIR)/ggml-metal.xcframework/ios-arm64/libggml-metal.a
+else
 rmclusternode_CFLAGS = \
 	-fobjc-arc \
 	-fno-modules \
@@ -80,6 +120,7 @@ rmclusternode_LDFLAGS += \
 	$(ARMV7_LIB_DIR)/libggml-cpu.a \
 	$(ARMV7_LIB_DIR)/libggml-blas.a \
 	$(ARMV7_LIB_DIR)/libggml-rpc.a
+endif
 rmclusternode_INFOPLIST = distributed-ml-ggml-client-ios/Info.plist
 rmclusternode_RESOURCE_FILES = \
 	distributed-ml-ggml-client-ios/Info.plist \
@@ -112,8 +153,13 @@ $(ARMV7_MANIFEST):
 
 armv7-rebuild-ios10: $(ARMV7_MANIFEST)
 
+ifeq ($(ARCHS),arm64)
+before-all::
+	@mkdir -p "$(MODULE_CACHE_DIR)"
+else
 before-all:: $(ARMV7_MANIFEST)
 	@mkdir -p "$(MODULE_CACHE_DIR)"
+endif
 
 internal-ipa:: stage
 	@test -d "$(THEOS_STAGING_DIR)/Applications/$(APPLICATION_NAME).app" || (echo "Expected staged app at $(THEOS_STAGING_DIR)/Applications/$(APPLICATION_NAME).app" && exit 1)

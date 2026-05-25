@@ -100,15 +100,25 @@
     [self.contentStack addArrangedSubview:self.rpcPane];
     self.rpcPane.hidden = YES;
 
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    NSLayoutYAxisAnchor *topAnchor = self.topLayoutGuide.bottomAnchor;
+    NSLayoutYAxisAnchor *bottomAnchor = self.bottomLayoutGuide.topAnchor;
+    #pragma clang diagnostic pop
+    if (@available(iOS 11.0, *)) {
+        topAnchor = self.view.safeAreaLayoutGuide.topAnchor;
+        bottomAnchor = self.view.safeAreaLayoutGuide.bottomAnchor;
+    }
+
     [NSLayoutConstraint activateConstraints:@[
-        [self.segmentControl.topAnchor constraintEqualToAnchor:self.topLayoutGuide.bottomAnchor constant:12.0],
+        [self.segmentControl.topAnchor constraintEqualToAnchor:topAnchor constant:12.0],
         [self.segmentControl.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
         [self.segmentControl.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
 
         [self.scrollView.topAnchor constraintEqualToAnchor:self.segmentControl.bottomAnchor constant:12.0],
         [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.scrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [self.scrollView.bottomAnchor constraintEqualToAnchor:self.bottomLayoutGuide.topAnchor],
+        [self.scrollView.bottomAnchor constraintEqualToAnchor:bottomAnchor],
 
         [self.contentStack.topAnchor constraintEqualToAnchor:self.scrollView.topAnchor constant:16.0],
         [self.contentStack.leadingAnchor constraintEqualToAnchor:self.scrollView.leadingAnchor constant:16.0],
