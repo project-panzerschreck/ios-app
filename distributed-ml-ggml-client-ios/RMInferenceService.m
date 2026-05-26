@@ -266,7 +266,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     if (![LlamaBridge rpcAvailable]) {
         [self notifyOnMain:^{
             self.rpcServerState = RMRPCServerStateUnavailable;
-            self.rpcStatusMessage = @"ggml-rpc not compiled in. Run scripts/build-ggml-ios.sh then add ggml-rpc.xcframework to the target.";
+            self.rpcStatusMessage = @"ggml-rpc not compiled in. Rebuild the iOS XCFrameworks with GGML_RPC=ON from the local llama.cpp-rpc checkout.";
         }];
         return;
     }

@@ -94,8 +94,7 @@ rmclusternode_LDFLAGS += \
 	$(ARM64_XCFRAMEWORK_DIR)/ggml-base.xcframework/ios-arm64/libggml-base.a \
 	$(ARM64_XCFRAMEWORK_DIR)/ggml-cpu.xcframework/ios-arm64/libggml-cpu.a \
 	$(ARM64_XCFRAMEWORK_DIR)/ggml-blas.xcframework/ios-arm64/libggml-blas.a \
-	$(ARM64_XCFRAMEWORK_DIR)/ggml-rpc.xcframework/ios-arm64/libggml-rpc.a \
-	$(ARM64_XCFRAMEWORK_DIR)/ggml-metal.xcframework/ios-arm64/libggml-metal.a
+	$(ARM64_XCFRAMEWORK_DIR)/ggml-rpc.xcframework/ios-arm64/libggml-rpc.a
 else
 rmclusternode_CFLAGS = \
 	-fobjc-arc \

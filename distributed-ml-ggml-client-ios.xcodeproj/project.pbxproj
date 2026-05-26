@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A30493DF2F4D34E0003138C5 /* ggml-metal.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493CF2F4D335C003138C5 /* ggml-metal.xcframework */; };
 		A30493E12F4D34E0003138C5 /* ggml-blas.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493D02F4D335C003138C5 /* ggml-blas.xcframework */; };
 		A30493E32F4D34E0003138C5 /* ggml-cpu.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493362F4D2DFA003138C5 /* ggml-cpu.xcframework */; };
 		A30493E52F4D34E0003138C5 /* ggml-base.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A30493382F4D2DFA003138C5 /* ggml-base.xcframework */; };
@@ -88,7 +87,6 @@
 			files = (
 				A30502012F4D1DFF003138C5 /* Metal.framework in Frameworks */,
 				A30493E52F4D34E0003138C5 /* ggml-base.xcframework in Frameworks */,
-				A30493DF2F4D34E0003138C5 /* ggml-metal.xcframework in Frameworks */,
 				A30493E32F4D34E0003138C5 /* ggml-cpu.xcframework in Frameworks */,
 				A30493E12F4D34E0003138C5 /* ggml-blas.xcframework in Frameworks */,
 				A30502022F4D1DFF003138C5 /* Accelerate.framework in Frameworks */,
@@ -467,7 +465,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H258T76LF5;
+				DEVELOPMENT_TEAM = UM5VQ7V6SS;
 				INFOPLIST_FILE = "distributed-ml-ggml-client-ios/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -475,7 +473,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rmcluster.rmcluster-node";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rm.rmcluster-node";
 				PRODUCT_NAME = rmclusternode;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -502,7 +500,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H258T76LF5;
+				DEVELOPMENT_TEAM = UM5VQ7V6SS;
 				INFOPLIST_FILE = "distributed-ml-ggml-client-ios/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -510,7 +508,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rmcluster.rmcluster-node";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rm.rmcluster-node";
 				PRODUCT_NAME = rmclusternode;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

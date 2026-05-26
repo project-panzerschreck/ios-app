@@ -118,19 +118,12 @@ static bool llama_device_has_simdgroup_reduction(void) {
 #if TARGET_OS_SIMULATOR || !defined(__arm64__)
     return false;
 #else
-    id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
-    if (!dev) return false;
-
-    bool ok = false;
-    if (@available(iOS 14.0, *)) {
-        ok = [dev supportsFamily:MTLGPUFamilyApple7];
-    }
-#if defined(MTLGPUFamilyMetal3)
-    if (!ok && @available(iOS 16.0, *)) {
-        ok = [dev supportsFamily:MTLGPUFamilyMetal3];
-    }
-#endif
-    return ok;
+    // The iphone6 branch targets older devices/OS combinations where asking
+    // MTLDevice capability questions like supportsFamily: is not reliable and
+    // can itself crash on wrapped driver objects (for example AGXA8Device /
+    // MTLDebugDevice on older runtimes). For this branch, prefer the safe path:
+    // disable Metal offload and fall back to CPU execution/RPC backend setup.
+    return false;
 #endif
 }
 
