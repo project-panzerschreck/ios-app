@@ -37,7 +37,7 @@
 
 /* Begin PBXFileReference section */
 		3D84C1762DC18B423C308E1D /* ggml-rpc.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "ggml-rpc.xcframework"; path = "Frameworks/ggml-rpc.xcframework"; sourceTree = "<group>"; };
-		A30491252F4D1DFE003138C5 /* distributed-ml-ggml-client-ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "distributed-ml-ggml-client-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A30491252F4D1DFE003138C5 /* rmclusternode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rmclusternode.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A30491322F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "distributed-ml-ggml-client-iosTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A304913C2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "distributed-ml-ggml-client-iosUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A30493352F4D2DFA003138C5 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = "<group>"; };
@@ -129,7 +129,7 @@
 		A30491262F4D1DFE003138C5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A30491252F4D1DFE003138C5 /* distributed-ml-ggml-client-ios.app */,
+				A30491252F4D1DFE003138C5 /* rmclusternode.app */,
 				A30491322F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests.xctest */,
 				A304913C2F4D1DFF003138C5 /* distributed-ml-ggml-client-iosUITests.xctest */,
 			);
@@ -174,7 +174,7 @@
 			packageProductDependencies = (
 			);
 			productName = "distributed-ml-ggml-client-ios";
-			productReference = A30491252F4D1DFE003138C5 /* distributed-ml-ggml-client-ios.app */;
+			productReference = A30491252F4D1DFE003138C5 /* rmclusternode.app */;
 			productType = "com.apple.product-type.application";
 		};
 		A30491312F4D1DFF003138C5 /* distributed-ml-ggml-client-iosTests */ = {

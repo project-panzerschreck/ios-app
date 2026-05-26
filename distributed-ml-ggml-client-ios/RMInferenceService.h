@@ -56,6 +56,7 @@ extern NSString * const RMInferenceServiceDidUpdateNotification;
                    storagePort:(NSInteger)storagePort
                    discoveryIp:(NSString *)discoveryIp
                  discoveryPort:(NSInteger)discoveryPort
+                discoveryToken:(NSString *)discoveryToken
                        threads:(NSInteger)threads
                       deviceId:(NSString *)deviceId;
 - (void)stopRPCServer;

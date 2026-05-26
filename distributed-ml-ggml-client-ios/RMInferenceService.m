@@ -256,6 +256,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
                    storagePort:(NSInteger)storagePort
                    discoveryIp:(NSString *)discoveryIp
                  discoveryPort:(NSInteger)discoveryPort
+                discoveryToken:(NSString *)discoveryToken
                        threads:(NSInteger)threads
                       deviceId:(NSString *)deviceId {
     if (self.rpcServerState != RMRPCServerStateIdle) {
@@ -278,6 +279,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     [self startDiscoveryPingWithSequence:sequence
                              discoveryIp:discoveryIp
                            discoveryPort:discoveryPort
+                          discoveryToken:discoveryToken
                              servicePort:port
                              storagePort:storagePort
                                 deviceId:deviceId];
@@ -340,6 +342,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 - (void)startDiscoveryPingWithSequence:(NSUInteger)sequence
                            discoveryIp:(NSString *)discoveryIp
                          discoveryPort:(NSInteger)discoveryPort
+                        discoveryToken:(NSString *)discoveryToken
                            servicePort:(NSInteger)servicePort
                            storagePort:(NSInteger)storagePort
                               deviceId:(NSString *)deviceId {
@@ -360,6 +363,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         }
         [strongSelf sendDiscoveryAnnouncementToHost:trimmedHost
                                                port:discoveryPort
+                                              token:discoveryToken
                                         servicePort:servicePort
                                         storagePort:storagePort
                                            deviceId:deviceId];
@@ -376,6 +380,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 
 - (void)sendDiscoveryAnnouncementToHost:(NSString *)host
                                    port:(NSInteger)port
+                                  token:(NSString *)token
                             servicePort:(NSInteger)servicePort
                             storagePort:(NSInteger)storagePort
                                deviceId:(NSString *)deviceId {
@@ -397,6 +402,10 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     [items addObject:[NSURLQueryItem queryItemWithName:@"model" value:hardwareModel]];
     [items addObject:[NSURLQueryItem queryItemWithName:@"max_size"
                                                  value:[NSString stringWithFormat:@"%llu", (unsigned long long)[LlamaBridge processAvailableMemoryBytes]]]];
+    NSString *trimmedToken = [[token ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (trimmedToken.length > 0) {
+        [items addObject:[NSURLQueryItem queryItemWithName:@"token" value:trimmedToken]];
+    }
     if (device.batteryLevel >= 0.0f) {
         [items addObject:[NSURLQueryItem queryItemWithName:@"battery"
                                                      value:[NSString stringWithFormat:@"%.1f", device.batteryLevel * 100.0f]]];

@@ -37,17 +37,14 @@
 @property (nonatomic, strong) UITextField *serverHostField;
 @property (nonatomic, strong) UITextField *tokenField;
 @property (nonatomic, strong) UITextField *hostField;
-@property (nonatomic, strong) UITextField *discoveryIPField;
 @property (nonatomic, strong) UITextField *serverPortField;
 @property (nonatomic, strong) UITextField *threadCountField;
 @property (nonatomic, strong) UITextField *portField;
 @property (nonatomic, strong) UITextField *storagePortField;
-@property (nonatomic, strong) UITextField *discoveryPortField;
 @property (nonatomic, strong) UIStepper *serverPortStepper;
 @property (nonatomic, strong) UIStepper *threadCountStepper;
 @property (nonatomic, strong) UIStepper *portStepper;
 @property (nonatomic, strong) UIStepper *storagePortStepper;
-@property (nonatomic, strong) UIStepper *discoveryPortStepper;
 @property (nonatomic, strong) UILabel *importStatusLabel;
 @property (nonatomic, strong) UIButton *rpcStartStopButton;
 @property (nonatomic, strong) UILabel *rpcStatusLabel;
@@ -278,20 +275,18 @@
 
     UILabel *connectionTitle = [[UILabel alloc] init];
     connectionTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    connectionTitle.text = @"Connection";
+    connectionTitle.text = @"Coordinator";
     [self.rpcPane addArrangedSubview:connectionTitle];
 
     self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
-    self.serverURLField = [self textFieldWithPlaceholder:@"Server URL"];
-    self.serverHostField = [self textFieldWithPlaceholder:@"Server host"];
+    self.serverURLField = [self textFieldWithPlaceholder:@"Coordinator URL"];
+    self.serverHostField = [self textFieldWithPlaceholder:@"Coordinator host"];
     self.tokenField = [self textFieldWithPlaceholder:@"Token"];
     self.hostField = [self textFieldWithPlaceholder:@"0.0.0.0"];
-    self.discoveryIPField = [self textFieldWithPlaceholder:@"LAN IP of server"];
     self.serverPortField = [self numericField];
     self.threadCountField = [self numericField];
     self.portField = [self numericField];
     self.storagePortField = [self numericField];
-    self.discoveryPortField = [self numericField];
 
     [self.rpcPane addArrangedSubview:self.connectionStringField];
 
@@ -304,7 +299,7 @@
     [self.rpcPane addArrangedSubview:self.serverHostField];
     self.serverPortStepper = [[UIStepper alloc] init];
     [self.serverPortStepper addTarget:self action:@selector(serverPortStepperChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Server port" field:self.serverPortField stepper:self.serverPortStepper]];
+    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Coordinator port" field:self.serverPortField stepper:self.serverPortStepper]];
     [self.rpcPane addArrangedSubview:self.tokenField];
 
     UIButton *scanQRButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -332,15 +327,11 @@
     self.storagePortStepper = [[UIStepper alloc] init];
     [self.storagePortStepper addTarget:self action:@selector(storagePortStepperChanged:) forControlEvents:UIControlEventValueChanged];
     [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Storage Port" field:self.storagePortField stepper:self.storagePortStepper]];
-    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Discovery IP" field:self.discoveryIPField]];
-    self.discoveryPortStepper = [[UIStepper alloc] init];
-    [self.discoveryPortStepper addTarget:self action:@selector(discoveryPortStepperChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Discovery Port" field:self.discoveryPortField stepper:self.discoveryPortStepper]];
 
     UILabel *footer = [[UILabel alloc] init];
     footer.numberOfLines = 0;
     footer.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
-    footer.text = @"Paste a rmcluster://connect URL, scan a QR code, or manually edit the host, port, and token.";
+    footer.text = @"Paste a rmcluster://connect URL, scan a QR code, or manually edit the coordinator host, port, and token.";
     [self.rpcPane addArrangedSubview:footer];
 
     self.rpcStatusLabel = [[UILabel alloc] init];
@@ -398,24 +389,27 @@
 }
 
 - (void)loadSettingsIntoFields {
-    self.serverHostField.text = self.settings.clusterServerHost;
-    self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.clusterServerPort];
-    self.serverPortStepper.value = self.settings.clusterServerPort;
+    NSString *coordinatorHost = self.settings.clusterServerHost.length > 0 ? self.settings.clusterServerHost : self.settings.discoveryIp;
+    NSInteger coordinatorPort = self.settings.clusterServerPort > 0 ? self.settings.clusterServerPort : self.settings.discoveryPort;
+    if (coordinatorPort == 0) {
+        coordinatorPort = 4917;
+    }
+    self.serverHostField.text = coordinatorHost ?: @"";
+    self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)coordinatorPort];
+    self.serverPortStepper.value = coordinatorPort;
     self.tokenField.text = self.settings.clusterToken;
     self.hostField.text = self.settings.host;
     self.portField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.port];
     self.portStepper.value = self.settings.port;
     self.storagePortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.storagePort];
     self.storagePortStepper.value = self.settings.storagePort;
-    self.discoveryIPField.text = self.settings.discoveryIp;
-    self.discoveryPortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.discoveryPort];
-    self.discoveryPortStepper.value = self.settings.discoveryPort;
     self.threadCountField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.threads];
     self.threadCountStepper.minimumValue = 1;
     self.threadCountStepper.maximumValue = 64;
     self.threadCountStepper.value = self.settings.threads;
     self.maxTokensValueLabel.text = @"200";
     [self updateTemperatureLabel];
+    [self syncDiscoverySettingsFromCoordinatorFields];
     [self syncServerURLFromHostAndPort];
 }
 
@@ -633,6 +627,7 @@
                                  storagePort:self.settings.storagePort
                                  discoveryIp:self.settings.discoveryIp
                                discoveryPort:self.settings.discoveryPort
+                              discoveryToken:self.settings.clusterToken
                                      threads:self.settings.threads
                                     deviceId:self.settings.deviceId];
     }
@@ -642,11 +637,10 @@
     self.settings.clusterServerHost = self.serverHostField.text ?: @"";
     self.settings.clusterServerPort = [self.serverPortField.text integerValue];
     self.settings.clusterToken = self.tokenField.text ?: @"";
+    [self syncDiscoverySettingsFromCoordinatorFields];
     self.settings.host = self.hostField.text ?: @"";
     self.settings.port = [self.portField.text integerValue];
     self.settings.storagePort = [self.storagePortField.text integerValue];
-    self.settings.discoveryIp = self.discoveryIPField.text ?: @"";
-    self.settings.discoveryPort = [self.discoveryPortField.text integerValue];
     self.settings.threads = MAX(1, [self.threadCountField.text integerValue]);
 }
 
@@ -660,26 +654,20 @@
     self.connectionStringField.text = [rawValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     self.settings.clusterServerHost = payload.host ?: @"";
     self.serverHostField.text = self.settings.clusterServerHost;
-    self.settings.discoveryIp = payload.host ?: @"";
-    self.discoveryIPField.text = self.settings.discoveryIp;
 
     if (payload.port != nil) {
         self.settings.clusterServerPort = payload.port.integerValue;
-        self.settings.discoveryPort = payload.port.integerValue;
         self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.clusterServerPort];
-        self.discoveryPortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.discoveryPort];
         self.serverPortStepper.value = self.settings.clusterServerPort;
-        self.discoveryPortStepper.value = self.settings.discoveryPort;
     }
 
-    if (payload.token.length > 0) {
-        self.settings.clusterToken = payload.token;
-        self.tokenField.text = payload.token;
-    }
+    self.settings.clusterToken = payload.token ?: @"";
+    self.tokenField.text = self.settings.clusterToken;
     if (payload.device.length > 0) {
         self.settings.clusterDeviceLabel = payload.device;
     }
 
+    [self syncDiscoverySettingsFromCoordinatorFields];
     [self syncServerURLFromHostAndPort];
     self.segmentControl.selectedSegmentIndex = 1;
     [self segmentChanged:self.segmentControl];
@@ -701,16 +689,12 @@
         return;
     }
     self.serverHostField.text = payload.host ?: @"";
-    self.discoveryIPField.text = payload.host ?: @"";
     if (payload.port != nil) {
         self.serverPortField.text = [payload.port stringValue];
-        self.discoveryPortField.text = [payload.port stringValue];
         self.serverPortStepper.value = payload.port.doubleValue;
-        self.discoveryPortStepper.value = payload.port.doubleValue;
     }
-    if (payload.token.length > 0) {
-        self.tokenField.text = payload.token;
-    }
+    self.tokenField.text = payload.token ?: @"";
+    [self syncDiscoverySettingsFromCoordinatorFields];
 }
 
 - (void)serverPortStepperChanged:(UIStepper *)sender {
@@ -730,8 +714,9 @@
     self.storagePortField.text = [NSString stringWithFormat:@"%ld", (long)sender.value];
 }
 
-- (void)discoveryPortStepperChanged:(UIStepper *)sender {
-    self.discoveryPortField.text = [NSString stringWithFormat:@"%ld", (long)sender.value];
+- (void)syncDiscoverySettingsFromCoordinatorFields {
+    self.settings.discoveryIp = self.serverHostField.text ?: @"";
+    self.settings.discoveryPort = [self.serverPortField.text integerValue];
 }
 
 - (void)inferenceServiceDidUpdate:(NSNotification *)notification {
