@@ -32,8 +32,6 @@ struct InferenceView: View {
     // ── RPC worker state ──────────────────────────────────────────────────────
     @AppStorage("rpcHost") private var rpcHost: String = "0.0.0.0"
     @AppStorage("rpcPort") private var rpcPort: Int = 50052
-    @AppStorage("rpcDiscoveryIp") private var rpcDiscoveryIp: String = ""
-    @AppStorage("rpcDiscoveryPort") private var rpcDiscoveryPort: Int = 4917
     @AppStorage("rpcThreads") private var rpcThreads: Int = 4
     @AppStorage("clusterServerHost") private var clusterServerHost: String = ""
     @AppStorage("clusterServerPort") private var clusterServerPort: Int = 4917
@@ -101,6 +99,15 @@ struct InferenceView: View {
             if clusterDeviceLabel.isEmpty {
                 clusterDeviceLabel = UIDeviceLabel.current
             }
+            let coordinatorHost = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
+            if coordinatorHost.isEmpty && !settings.discoveryIp.isEmpty {
+                clusterServerHost = settings.discoveryIp
+            }
+            if clusterServerPort == 0 {
+                clusterServerPort = settings.discoveryPort > 0 ? settings.discoveryPort : 4917
+            }
+            syncRuntimeDiscoverySettings()
+            syncServerURLFromHostAndPort()
         }
     }
 
@@ -348,7 +355,7 @@ struct InferenceView: View {
                 }
                 .disabled(connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                TextField("Server URL", text: $serverURL)
+                TextField("Coordinator URL", text: $serverURL)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
                     .keyboardType(.URL)
@@ -356,17 +363,19 @@ struct InferenceView: View {
                         syncConnectionFields(fromServerURL: serverURL)
                     }
 
-                TextField("Server host", text: $clusterServerHost)
+                TextField("Coordinator host", text: $clusterServerHost)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
                     .keyboardType(.URL)
                     .onChange(of: clusterServerHost) { _ in
                         syncServerURLFromHostAndPort()
+                        syncRuntimeDiscoverySettings()
                     }
 
-                IntStepperField("Server port", value: $clusterServerPort, in: 1...65535, disabled: false)
+                IntStepperField("Coordinator port", value: $clusterServerPort, in: 1...65535, disabled: false)
                     .onChange(of: clusterServerPort) { _ in
                         syncServerURLFromHostAndPort()
+                        syncRuntimeDiscoverySettings()
                     }
 
                 TextField("Token", text: $clusterToken)
@@ -390,19 +399,10 @@ struct InferenceView: View {
                 }
                 IntStepperField("Port", value: $settings.port, in: 1024...65535, disabled: isRunning)
                 IntStepperField("Storage Port", value: $settings.storagePort, in: 1024...65535, disabled: isRunning)
-                HStack {
-                    Text("Discovery IP")
-                    Spacer()
-                    TextField("LAN IP of server", text: $settings.discoveryIp)
-                        .disabled(isRunning)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 160)
-                }
-                IntStepperField("Discovery Port", value: $settings.discoveryPort, in: 1024...65535, disabled: isRunning)
             } header: {
-                Text("Connection")
+                Text("Coordinator")
             } footer: {
-                Text("Paste a rmcluster://connect URL, scan a QR code, or manually edit the host, port, and token.")
+                Text("Paste a rmcluster://connect URL, scan a QR code, or manually edit the coordinator host, port, and token.")
             }
 
             // ── Start / Stop ──────────────────────────────────────────────────
@@ -421,12 +421,14 @@ struct InferenceView: View {
                     .foregroundColor(.red)
                 } else {
                     Button {
+                        syncRuntimeDiscoverySettings()
                         engine.startRPCServer(
                             host: settings.host,
                             port: settings.port,
                             storagePort: settings.storagePort,
                             discoveryIp: settings.discoveryIp,
                             discoveryPort: settings.discoveryPort,
+                            discoveryToken: clusterToken,
                             threads: settings.threads,
                             deviceId: settings.deviceId
                         )
@@ -470,16 +472,14 @@ struct InferenceView: View {
         clusterServerHost = parsed.host
         if let port = parsed.port {
             clusterServerPort = port
-            rpcDiscoveryPort = port
         }
-        if let token = parsed.token, !token.isEmpty {
-            clusterToken = token
-        }
+        clusterToken = parsed.token ?? ""
         if let device = parsed.device, !device.isEmpty {
             clusterDeviceLabel = device
         }
 
-        rpcDiscoveryIp = parsed.host
+        syncRuntimeDiscoverySettings()
+        syncServerURLFromHostAndPort()
         selectedTab = 1
         importStatus = ""
     }
@@ -497,15 +497,17 @@ struct InferenceView: View {
         clusterServerHost = parsed.host
         if let port = parsed.port {
             clusterServerPort = port
-            rpcDiscoveryPort = port
         }
-        if let token = parsed.token, !token.isEmpty {
-            clusterToken = token
-        }
+        clusterToken = parsed.token ?? ""
         if let device = parsed.device, !device.isEmpty {
             clusterDeviceLabel = device
         }
-        rpcDiscoveryIp = parsed.host
+        syncRuntimeDiscoverySettings()
+    }
+
+    private func syncRuntimeDiscoverySettings() {
+        settings.discoveryIp = clusterServerHost
+        settings.discoveryPort = clusterServerPort
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────

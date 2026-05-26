@@ -248,6 +248,7 @@ final class InferenceEngine: ObservableObject {
         storagePort: Int,
         discoveryIp: String,
         discoveryPort: Int,
+        discoveryToken: String,
         threads: Int,
         deviceId: String
         ) {
@@ -266,6 +267,7 @@ final class InferenceEngine: ObservableObject {
         startDiscoveryPing(
             discoveryIp: discoveryIp,
             discoveryPort: discoveryPort,
+            discoveryToken: discoveryToken,
             servicePort: port,
             storagePort: storagePort,
             deviceId: deviceId
@@ -313,6 +315,7 @@ final class InferenceEngine: ObservableObject {
                         self.startDiscoveryPing(
                             discoveryIp: discoveryIp,
                             discoveryPort: discoveryPort,
+                            discoveryToken: discoveryToken,
                             servicePort: candidatePort,
                             storagePort: storagePort,
                             deviceId: deviceId
@@ -388,6 +391,7 @@ final class InferenceEngine: ObservableObject {
     private func startDiscoveryPing(
         discoveryIp: String,
         discoveryPort: Int,
+        discoveryToken: String,
         servicePort: Int,
         storagePort: Int,
         deviceId: String
@@ -434,6 +438,10 @@ final class InferenceEngine: ObservableObject {
                     }
                     if !tempC.isNaN {
                         items.append(.init(name: "temperature", value: String(format: "%.1f", tempC)))
+                    }
+                    let trimmedToken = discoveryToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedToken.isEmpty {
+                        items.append(.init(name: "token", value: trimmedToken))
                     }
                     comps.queryItems = items
                     guard let url = comps.url else { return }
