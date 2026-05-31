@@ -1,5 +1,5 @@
 Package: com.panzerschreck.rmcluster-node
-Name: rmcluster node
+Name: RMCluster Node
 Depends: firmware (>= 10.3)
 Version: 1.0.0
 Architecture: iphoneos-arm

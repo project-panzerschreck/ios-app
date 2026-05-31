@@ -64,6 +64,7 @@ rmclusternode_FILES = \
 	distributed-ml-ggml-client-ios/AppDelegate.m \
 	distributed-ml-ggml-client-ios/RMChatMessage.m \
 	distributed-ml-ggml-client-ios/RMConnectionBootstrapPayload.m \
+	distributed-ml-ggml-client-ios/GGMLMetalStub.mm \
 	distributed-ml-ggml-client-ios/RMInferenceService.m \
 	distributed-ml-ggml-client-ios/RMQRScannerViewController.m \
 	distributed-ml-ggml-client-ios/RMRootViewController.m \

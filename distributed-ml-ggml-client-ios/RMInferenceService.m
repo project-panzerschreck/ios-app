@@ -251,14 +251,11 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     }];
 }
 
-- (void)startRPCServerWithHost:(NSString *)host
-                          port:(NSInteger)port
-                   storagePort:(NSInteger)storagePort
-                   discoveryIp:(NSString *)discoveryIp
-                 discoveryPort:(NSInteger)discoveryPort
-                discoveryToken:(NSString *)discoveryToken
-                       threads:(NSInteger)threads
-                      deviceId:(NSString *)deviceId {
+- (void)startRPCServerWithCoordinatorHost:(NSString *)coordinatorHost
+                          coordinatorPort:(NSInteger)coordinatorPort
+                                 nickname:(NSString *)nickname
+                                  threads:(NSInteger)threads
+                                 deviceId:(NSString *)deviceId {
     if (self.rpcServerState != RMRPCServerStateIdle) {
         return;
     }
@@ -273,13 +270,16 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 
     self.rpcSequence += 1;
     NSUInteger sequence = self.rpcSequence;
+    NSString *host = [RMRpcSettings listenHost];
+    NSInteger port = [RMRpcSettings listenPort];
+    NSInteger storagePort = [RMRpcSettings storagePort];
     self.storageServer = [[RMStorageServer alloc] initWithStorageDirectory:[[RMRpcSettings sharedSettings] storageDirectory]];
     [self.storageServer startOnPort:storagePort];
 
     [self startDiscoveryPingWithSequence:sequence
-                             discoveryIp:discoveryIp
-                           discoveryPort:discoveryPort
-                          discoveryToken:discoveryToken
+                         coordinatorHost:coordinatorHost
+                         coordinatorPort:coordinatorPort
+                                nickname:nickname
                              servicePort:port
                              storagePort:storagePort
                                 deviceId:deviceId];
@@ -340,14 +340,14 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 }
 
 - (void)startDiscoveryPingWithSequence:(NSUInteger)sequence
-                           discoveryIp:(NSString *)discoveryIp
-                         discoveryPort:(NSInteger)discoveryPort
-                        discoveryToken:(NSString *)discoveryToken
+                       coordinatorHost:(NSString *)coordinatorHost
+                       coordinatorPort:(NSInteger)coordinatorPort
+                              nickname:(NSString *)nickname
                            servicePort:(NSInteger)servicePort
                            storagePort:(NSInteger)storagePort
                               deviceId:(NSString *)deviceId {
     [self stopDiscoveryPing];
-    NSString *trimmedHost = [[discoveryIp ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    NSString *trimmedHost = [[coordinatorHost ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
     if (trimmedHost.length == 0) {
         return;
     }
@@ -362,8 +362,8 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
             return;
         }
         [strongSelf sendDiscoveryAnnouncementToHost:trimmedHost
-                                               port:discoveryPort
-                                              token:discoveryToken
+                                               port:coordinatorPort
+                                          nickname:nickname
                                         servicePort:servicePort
                                         storagePort:storagePort
                                            deviceId:deviceId];
@@ -380,7 +380,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 
 - (void)sendDiscoveryAnnouncementToHost:(NSString *)host
                                    port:(NSInteger)port
-                                  token:(NSString *)token
+                               nickname:(NSString *)nickname
                             servicePort:(NSInteger)servicePort
                             storagePort:(NSInteger)storagePort
                                deviceId:(NSString *)deviceId {
@@ -402,9 +402,9 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     [items addObject:[NSURLQueryItem queryItemWithName:@"model" value:hardwareModel]];
     [items addObject:[NSURLQueryItem queryItemWithName:@"max_size"
                                                  value:[NSString stringWithFormat:@"%llu", (unsigned long long)[LlamaBridge processAvailableMemoryBytes]]]];
-    NSString *trimmedToken = [[token ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
-    if (trimmedToken.length > 0) {
-        [items addObject:[NSURLQueryItem queryItemWithName:@"token" value:trimmedToken]];
+    NSString *trimmedNickname = [[nickname ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (trimmedNickname.length > 0) {
+        [items addObject:[NSURLQueryItem queryItemWithName:@"nickname" value:trimmedNickname]];
     }
     if (device.batteryLevel >= 0.0f) {
         [items addObject:[NSURLQueryItem queryItemWithName:@"battery"
