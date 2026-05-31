@@ -45,7 +45,7 @@ else
 fi
 BUILD_BASE="$PROJECT_DIR/build-llama"
 OUTPUT_DIR="$PROJECT_DIR/Frameworks"
-IOS_MIN="15.6"
+IOS_MIN="${IOS_MIN:-12.0}"
 
 log()  { echo "[build-ggml-ios] $*"; }
 die()  { echo "[build-ggml-ios] ERROR: $*" >&2; exit 1; }
@@ -64,6 +64,16 @@ reset_build_dir_if_needed() {
         log "Removing stale CMake cache in $build_dir"
         log "  cached source: $cached_source"
         log "  requested source: $LLAMA_DIR"
+        rm -rf "$build_dir"
+        return 0
+    fi
+
+    local cached_target
+    cached_target="$(awk -F= '/^CMAKE_OSX_DEPLOYMENT_TARGET:STRING=/{print $2}' "$cache_file" | tail -1)"
+    if [[ -n "$cached_target" && "$cached_target" != "$IOS_MIN" ]]; then
+        log "Removing stale CMake cache in $build_dir"
+        log "  cached deployment target: $cached_target"
+        log "  requested deployment target: $IOS_MIN"
         rm -rf "$build_dir"
     fi
 }
