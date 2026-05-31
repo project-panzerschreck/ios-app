@@ -240,21 +240,20 @@ final class InferenceEngine: ObservableObject {
     /// Start the GGML RPC server so an external llama-cli can use this device
     /// as a Metal compute backend.  The phone is a leaf node only — it never
     /// coordinates inference itself.
-    ///
-    /// - Parameter port: TCP port to listen on (default 50052, same as Android team).
     func startRPCServer(
-        host: String,
-        port: Int,
-        storagePort: Int,
-        discoveryIp: String,
-        discoveryPort: Int,
-        discoveryToken: String,
+        coordinatorHost: String,
+        coordinatorPort: Int,
+        nickname: String,
         threads: Int,
         deviceId: String
         ) {
 
         guard case .idle = rpcServerState else { return }
         rpcServerState = .starting
+
+        let host = RpcSettings.listenHost
+        let port = RpcSettings.listenPort
+        let storagePort = RpcSettings.storagePort
 
         let storageDir = RpcSettings.shared.storageDirectory
         let storageServer = StorageServer(storageDir: storageDir)
@@ -265,11 +264,11 @@ final class InferenceEngine: ObservableObject {
         }
 
         startDiscoveryPing(
-            discoveryIp: discoveryIp,
-            discoveryPort: discoveryPort,
-            discoveryToken: discoveryToken,
+            coordinatorHost: coordinatorHost,
+            coordinatorPort: coordinatorPort,
             servicePort: port,
             storagePort: storagePort,
+            nickname: nickname,
             deviceId: deviceId
         )
 
@@ -313,11 +312,11 @@ final class InferenceEngine: ObservableObject {
                         UIApplication.shared.isIdleTimerDisabled = true
 #endif
                         self.startDiscoveryPing(
-                            discoveryIp: discoveryIp,
-                            discoveryPort: discoveryPort,
-                            discoveryToken: discoveryToken,
+                            coordinatorHost: coordinatorHost,
+                            coordinatorPort: coordinatorPort,
                             servicePort: candidatePort,
                             storagePort: storagePort,
+                            nickname: nickname,
                             deviceId: deviceId
                         )
                     }
@@ -326,7 +325,13 @@ final class InferenceEngine: ObservableObject {
                 let startedAt = Date()
                 // Blocking call – returns only when the server socket is closed,
                 // or immediately if the port cannot be bound.
-                bridge.startRPCServer(endpoint, cacheDir: cacheDir, freeMB: freeMB, totalMB: totalMB, threads: UInt(threads))
+                bridge.startRPCServer(
+                    endpoint,
+                    cacheDir: cacheDir,
+                    freeMB: freeMB,
+                    totalMB: totalMB,
+                    threads: UInt(threads)
+                )
                 let elapsed = Date().timeIntervalSince(startedAt)
 
                 discoveryTask.cancel()
@@ -389,15 +394,16 @@ final class InferenceEngine: ObservableObject {
     
     // ── UDP Discovery Ping ────────────────────────────────────────────────────
     private func startDiscoveryPing(
-        discoveryIp: String,
-        discoveryPort: Int,
-        discoveryToken: String,
+        coordinatorHost: String,
+        coordinatorPort: Int,
         servicePort: Int,
         storagePort: Int,
+        nickname: String,
         deviceId: String
     ) {
         stopDiscoveryPing()
-        let host = discoveryIp.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = coordinatorHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else { return }
 
         discoveryTask = Task.detached {
@@ -423,7 +429,7 @@ final class InferenceEngine: ObservableObject {
                     var comps = URLComponents()
                     comps.scheme = "http"
                     comps.host   = host
-                    comps.port   = discoveryPort
+                    comps.port   = coordinatorPort
                     comps.path   = "/announce"
                     var items: [URLQueryItem] = [
                         .init(name: "id",       value: deviceId),
@@ -439,9 +445,8 @@ final class InferenceEngine: ObservableObject {
                     if !tempC.isNaN {
                         items.append(.init(name: "temperature", value: String(format: "%.1f", tempC)))
                     }
-                    let trimmedToken = discoveryToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmedToken.isEmpty {
-                        items.append(.init(name: "token", value: trimmedToken))
+                    if !trimmedNickname.isEmpty {
+                        items.append(.init(name: "nickname", value: trimmedNickname))
                     }
                     comps.queryItems = items
                     guard let url = comps.url else { return }

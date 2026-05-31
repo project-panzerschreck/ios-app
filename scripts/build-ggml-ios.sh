@@ -2,8 +2,8 @@
 #
 # build-ggml-ios.sh
 #
-# Clones llama.cpp (the primary GGML-based LLM runtime) and builds it as
-# XCFrameworks for iOS device (arm64 + Metal) and iOS Simulator (arm64 + x86_64).
+# Uses llama.cpp-rpc (our GGML RPC runtime) and builds device-only XCFrameworks
+# for iPhone/iPad hardware (arm64 + Metal).
 #
 # Usage:
 #   cd 2026_ver/distributed-ml-ggml-client-ios
@@ -21,8 +21,9 @@
 #   → (+) → Add Other → Add Files → pick each .xcframework
 #   → Set each to "Do Not Embed"
 #
-# The Header Search Paths in the project already point to
-#   vendor/llama.cpp/include   (populated by this script)
+# The Header Search Paths in the project point to
+#   ../llama.cpp-rpc/include
+#   ../llama.cpp-rpc/ggml/include
 #
 # Requirements:
 #   brew install cmake          # cmake >= 3.24
@@ -32,18 +33,72 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-LLAMA_DIR="$PROJECT_DIR/../llama.cpp-rpc"
+DEFAULT_LLAMA_RPC_DIR="$PROJECT_DIR/../llama.cpp-rpc"
+LLAMA_RPC_GIT_SSH="git@github.com:rmcluster/llama.cpp-rpc.git"
+LLAMA_RPC_GIT_HTTPS="https://github.com/rmcluster/llama.cpp-rpc.git"
+if [[ -n "${LLAMA_DIR:-}" ]]; then
+    LLAMA_DIR="$LLAMA_DIR"
+elif [[ -d "$DEFAULT_LLAMA_RPC_DIR" ]]; then
+    LLAMA_DIR="$DEFAULT_LLAMA_RPC_DIR"
+else
+    LLAMA_DIR="$DEFAULT_LLAMA_RPC_DIR"
+fi
 BUILD_BASE="$PROJECT_DIR/build-llama"
 OUTPUT_DIR="$PROJECT_DIR/Frameworks"
-IOS_MIN="14.7"
-
-# ── Pin a specific llama.cpp release ─────────────────────────────────────────
-# Update this tag to upgrade.  Find tags at https://github.com/ggml-org/llama.cpp/tags
-LLAMA_TAG="b5076"
+IOS_MIN="15.6"
 
 log()  { echo "[build-ggml-ios] $*"; }
 die()  { echo "[build-ggml-ios] ERROR: $*" >&2; exit 1; }
-NPROC="${NPROC:-8}"
+
+reset_build_dir_if_needed() {
+    local build_dir="$1"
+    local cache_file="$build_dir/CMakeCache.txt"
+
+    if [[ ! -f "$cache_file" ]]; then
+        return 0
+    fi
+
+    local cached_source
+    cached_source="$(awk -F= '/^CMAKE_HOME_DIRECTORY:INTERNAL=/{print $2}' "$cache_file" | tail -1)"
+    if [[ -n "$cached_source" && "$cached_source" != "$LLAMA_DIR" ]]; then
+        log "Removing stale CMake cache in $build_dir"
+        log "  cached source: $cached_source"
+        log "  requested source: $LLAMA_DIR"
+        rm -rf "$build_dir"
+    fi
+}
+
+ensure_llama_rpc_checkout() {
+    if [[ -d "$LLAMA_DIR/.git" ]]; then
+        log "Using existing llama.cpp-rpc checkout at $LLAMA_DIR"
+        return 0
+    fi
+
+    if [[ -f "$LLAMA_DIR/CMakeLists.txt" && -d "$LLAMA_DIR/include" && -d "$LLAMA_DIR/ggml/include" ]]; then
+        log "Using existing llama.cpp-rpc source tree at $LLAMA_DIR"
+        return 0
+    fi
+
+    if [[ -e "$LLAMA_DIR" ]]; then
+        die "$LLAMA_DIR exists but does not look like a llama.cpp-rpc checkout. Remove it or set LLAMA_DIR explicitly."
+    fi
+
+    mkdir -p "$(dirname "$LLAMA_DIR")"
+    log "Cloning llama.cpp-rpc into $LLAMA_DIR …"
+    git clone "$LLAMA_RPC_GIT_SSH" "$LLAMA_DIR" \
+        || git clone "$LLAMA_RPC_GIT_HTTPS" "$LLAMA_DIR" \
+        || die "Failed to clone llama.cpp-rpc from both SSH and HTTPS remotes."
+}
+
+verify_llama_rpc_layout() {
+    if [[ ! -d "$LLAMA_DIR/ggml/include" ]]; then
+        die "ggml headers not found under $LLAMA_DIR"
+    fi
+
+    if [[ ! -d "$LLAMA_DIR/include" ]]; then
+        die "llama public headers not found under $LLAMA_DIR/include. Set LLAMA_DIR to a checkout that exposes the app-facing headers."
+    fi
+}
 
 # ── Dependency checks ─────────────────────────────────────────────────────────
 command -v cmake       >/dev/null 2>&1 || die "cmake not found – run: brew install cmake"
@@ -55,28 +110,20 @@ log "Xcode at: $XCODE_PATH"
 CMAKE_VER=$(cmake --version | head -1 | awk '{print $3}')
 log "cmake version: $CMAKE_VER"
 
-# ── Clone / update llama.cpp ──────────────────────────────────────────────────
-if [[ ! -d "$LLAMA_DIR/.git" ]]; then
-    log "Cloning llama.cpp @ $LLAMA_TAG …"
-    mkdir -p "$(dirname "$LLAMA_DIR")"
-    # Try tagged clone first; fall back to HEAD if tag doesn't exist yet
-    git clone --depth 1 --branch "$LLAMA_TAG" \
-        https://github.com/ggml-org/llama.cpp.git "$LLAMA_DIR" \
-    || git clone --depth 1 \
-        https://github.com/ggml-org/llama.cpp.git "$LLAMA_DIR"
-else
-    log "llama.cpp already at $LLAMA_DIR  (to update: cd $LLAMA_DIR && git pull)"
-fi
+# ── Ensure llama.cpp-rpc source tree exists ───────────────────────────────────
+ensure_llama_rpc_checkout
+verify_llama_rpc_layout
 
-# ── cmake configure + build for one platform slice ───────────────────────────
+# ── cmake configure + build for the device slice ─────────────────────────────
 build_slice() {
-    local name="$1"     # "iphoneos" | "iphonesimulator"
-    local archs="$2"    # "arm64"    | "arm64 x86_64"
-    local metal="$3"    # "ON"       | "OFF"
-    local sdk="$4"      # "iphoneos" | "iphonesimulator"
+    local name="$1"     # "iphoneos"
+    local archs="$2"    # "arm64"
+    local metal="$3"    # "ON"
+    local sdk="$4"      # "iphoneos"
     local build_dir="$BUILD_BASE/$name"
 
     log "── Configuring $name (archs: $archs, Metal: $metal) …"
+    reset_build_dir_if_needed "$build_dir"
     mkdir -p "$build_dir"
 
     cmake -S "$LLAMA_DIR" -B "$build_dir" \
@@ -99,19 +146,12 @@ build_slice() {
         2>&1 | tail -5
 
     log "── Building $name …"
-    # Build only library targets — executables have no bundle ID on iOS.
-    # The simulator slice intentionally disables Metal, so there is no
-    # ggml-metal target to build there; we generate a simulator stub later.
-    local targets=(ggml ggml-base ggml-cpu ggml-blas ggml-rpc llama)
-    if [[ "$metal" == "ON" ]]; then
-        targets+=(ggml-metal)
-    fi
-
-    for target in "${targets[@]}"; do
+    # Build only library targets — executables have no bundle ID on iOS
+    for target in ggml ggml-base ggml-cpu ggml-blas ggml-rpc ggml-metal llama; do
         cmake --build "$build_dir" \
             --config Release \
             --target "$target" \
-            --parallel "$NPROC" \
+            --parallel "$(sysctl -n hw.logicalcpu)" \
             -- \
             -sdk "$sdk" \
             ARCHS="$archs" \
@@ -121,24 +161,22 @@ build_slice() {
 }
 
 build_slice "iphoneos"      "arm64"          "ON"  "iphoneos"
-build_slice "iphonesimulator" "arm64 x86_64" "OFF" "iphonesimulator"
 
 # ── Locate a static library in a build tree ───────────────────────────────────
 find_lib() {
     local build_dir="$1"
     local libname="$2"
     find "$build_dir" \
-        \( -path "*/Release-iphoneos/lib${libname}.a"      \
-        -o -path "*/Release-iphonesimulator/lib${libname}.a" \
+        \( -path "*/Release-iphoneos/lib${libname}.a" \
         -o -path "*/Release/lib${libname}.a" \) \
         2>/dev/null | head -1
 }
 
-# ── Build one XCFramework (header-free static library) ───────────────────────
+# ── Build one device-only XCFramework (header-free static library) ───────────
 # Headers are NOT embedded in the xcframework.  Xcode finds them via the
 # HEADER_SEARCH_PATHS build setting:
-#   $(PROJECT_DIR)/vendor/llama.cpp/include
-#   $(PROJECT_DIR)/vendor/llama.cpp/ggml/include
+#   $(PROJECT_DIR)/../llama.cpp-rpc/include
+#   $(PROJECT_DIR)/../llama.cpp-rpc/ggml/include
 #
 # Embedding the same ggml/include headers in every xcframework causes
 # "Multiple commands produce …/include/ggml.h" conflicts at build time.
@@ -146,24 +184,18 @@ make_xcframework() {
     local libname="$1"
     local output="$OUTPUT_DIR/${libname}.xcframework"
 
-    local dev_lib sim_lib
-    dev_lib=$(find_lib "$BUILD_BASE/iphoneos"        "$libname")
-    sim_lib=$(find_lib "$BUILD_BASE/iphonesimulator"  "$libname")
+    local dev_lib
+    dev_lib=$(find_lib "$BUILD_BASE/iphoneos" "$libname")
 
     if [[ -z "$dev_lib" ]]; then
         log "  ⚠ Skipping $libname.xcframework — device lib not found."
         return 0
     fi
-    if [[ -z "$sim_lib" ]]; then
-        log "  ⚠ Skipping $libname.xcframework — simulator lib not found."
-        return 0
-    fi
 
-    log "Creating $libname.xcframework …"
+    log "Creating device-only $libname.xcframework …"
     rm -rf "$output"
     xcodebuild -create-xcframework \
         -library "$dev_lib" \
-        -library "$sim_lib" \
         -output  "$output"
 }
 
@@ -176,36 +208,14 @@ make_xcframework "ggml-cpu"
 make_xcframework "ggml-blas"
 make_xcframework "ggml-rpc"   # RPC backend (enabled by GGML_RPC=ON above)
 
-# ggml-metal: real device lib + simulator stub.
-# Metal was compiled out for the simulator (-DGGML_METAL=OFF), so the simulator
-# ggml.a never references ggml_backend_metal_reg.  We add a stub .a so that
-# xcodebuild doesn't error with "no library for this platform".
+# ggml-metal: package the real device lib only.
 dev_metal="$BUILD_BASE/iphoneos/ggml/src/ggml-metal/Release-iphoneos/libggml-metal.a"
 if [[ -f "$dev_metal" ]]; then
-    log "Creating ggml-metal simulator stub …"
-    SIM_STUB_C="$(mktemp /tmp/ggml_metal_stub_XXXXXX.c)"
-    echo 'void ggml_metal_sim_placeholder(void){}' > "$SIM_STUB_C"
-
-    xcrun --sdk iphonesimulator clang -arch arm64 \
-        -target arm64-apple-ios${IOS_MIN}-simulator \
-        -c "$SIM_STUB_C" -o "${SIM_STUB_C%.c}_arm64.o"
-    xcrun --sdk iphonesimulator clang -arch x86_64 \
-        -target x86_64-apple-ios${IOS_MIN}-simulator \
-        -c "$SIM_STUB_C" -o "${SIM_STUB_C%.c}_x86_64.o"
-
-    xcrun ar rcs "${SIM_STUB_C%.c}_arm64.a"  "${SIM_STUB_C%.c}_arm64.o"
-    xcrun ar rcs "${SIM_STUB_C%.c}_x86_64.a" "${SIM_STUB_C%.c}_x86_64.o"
-    lipo -create "${SIM_STUB_C%.c}_arm64.a" "${SIM_STUB_C%.c}_x86_64.a" \
-         -output "${SIM_STUB_C%.c}_sim.a"
-
-    log "Creating ggml-metal.xcframework (device + simulator stub) …"
+    log "Creating device-only ggml-metal.xcframework …"
     rm -rf "$OUTPUT_DIR/ggml-metal.xcframework"
     xcodebuild -create-xcframework \
         -library "$dev_metal" \
-        -library "${SIM_STUB_C%.c}_sim.a" \
         -output  "$OUTPUT_DIR/ggml-metal.xcframework"
-
-    rm -f "$SIM_STUB_C" "${SIM_STUB_C%.c}"_*.{c,o,a}
 else
     log "  ⚠ Skipping ggml-metal.xcframework — device lib not found."
 fi

@@ -26,9 +26,10 @@ DerivedData/
 
 # macOS
 .DS_Store
-.theos/
-.ipa-payload/
-armv7-rebuild-ios10/
-build/
-*.*/
-signed-app*/
+
+
+.DerivedData*/
+.ipa*/
+.theos*/
+arm*/
+build*/

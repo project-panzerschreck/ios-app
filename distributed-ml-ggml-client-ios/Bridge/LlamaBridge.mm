@@ -31,7 +31,7 @@
 #endif
 
 // GGML RPC backend (optional – requires GGML_RPC=ON + ggml-rpc.xcframework).
-// See scripts/build-ggml-ios.sh and docs at vendor/llama.cpp/ggml/include/ggml-rpc.h
+// See scripts/build-ggml-ios.sh and docs at ../llama.cpp-rpc/ggml/include/ggml-rpc.h
 #if LLAMA_AVAILABLE && __has_include(<ggml-rpc.h>)
   #include <ggml-rpc.h>
   #define GGML_RPC_AVAILABLE 1

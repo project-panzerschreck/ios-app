@@ -30,17 +30,11 @@ struct InferenceView: View {
     @State private var localModels: [URL] = []
 
     // ── RPC worker state ──────────────────────────────────────────────────────
-    @AppStorage("rpcHost") private var rpcHost: String = "0.0.0.0"
-    @AppStorage("rpcPort") private var rpcPort: Int = 50052
-    @AppStorage("rpcThreads") private var rpcThreads: Int = 4
     @AppStorage("clusterServerHost") private var clusterServerHost: String = ""
     @AppStorage("clusterServerPort") private var clusterServerPort: Int = 4917
-    @AppStorage("clusterDeviceLabel") private var clusterDeviceLabel: String = ""
     @AppStorage("clusterToken") private var clusterToken: String = ""
 
     @State private var connectionString: String = ""
-    @State private var serverURL:  String = ""
-    @State private var showRPC:    Bool   = true
     @State private var selectedTab: Int  = 1
     @State private var showQRScanner: Bool = false
     @State private var importStatus: String = ""
@@ -96,18 +90,6 @@ struct InferenceView: View {
         }
         .onAppear {
             refreshLocalModels()
-            if clusterDeviceLabel.isEmpty {
-                clusterDeviceLabel = UIDeviceLabel.current
-            }
-            let coordinatorHost = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
-            if coordinatorHost.isEmpty && !settings.discoveryIp.isEmpty {
-                clusterServerHost = settings.discoveryIp
-            }
-            if clusterServerPort == 0 {
-                clusterServerPort = settings.discoveryPort > 0 ? settings.discoveryPort : 4917
-            }
-            syncRuntimeDiscoverySettings()
-            syncServerURLFromHostAndPort()
         }
     }
 
@@ -115,7 +97,7 @@ struct InferenceView: View {
 
     @ViewBuilder
     private var modelSection: some View {
-        Section(header: Text("Model")) {
+        Section("Model") {
             switch engine.modelState {
             case .unloaded:
                 if localModels.isEmpty {
@@ -133,13 +115,13 @@ struct InferenceView: View {
                     Button { showDocPicker = true } label: {
                         Label("Load other…", systemImage: "doc.badge.plus")
                     }
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 }
 
             case .loading:
                 HStack {
                     ProgressView()
-                    Text("Loading model…").foregroundColor(.secondary)
+                    Text("Loading model…").foregroundStyle(.secondary)
                 }
 
             case .ready(let name, let nLayers):
@@ -155,27 +137,28 @@ struct InferenceView: View {
                     }
                 }
                 .padding(.vertical, 2)
-                Button { engine.unloadModel() } label: {
+                Button(role: .destructive) { engine.unloadModel() } label: {
                     Label("Unload model", systemImage: "eject")
                 }
-                .foregroundColor(.red)
 
             case .generating:
                 HStack {
                     ProgressView()
-                    Text("Generating…").foregroundColor(.secondary)
+                    Text("Generating…").foregroundStyle(.secondary)
                     Spacer()
                     if engine.tokensPerSecond > 0 {
                         Text(String(format: "%.1f tok/s", engine.tokensPerSecond))
                             .font(.caption.monospacedDigit())
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     Button("Stop") { engine.cancelGeneration() }
-                        .foregroundColor(.red)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.red)
                 }
 
             case .error(let msg):
-                Label(msg, systemImage: "exclamationmark.triangle").foregroundColor(.red)
+                Label(msg, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
                 Button("Try again") { showDocPicker = true }
             }
         }
@@ -192,14 +175,15 @@ struct InferenceView: View {
     private var chatSection: some View {
         // Message history
         if !engine.chatMessages.isEmpty {
-            Section(header: Text("Conversation")) {
+            Section("Conversation") {
                 ForEach(engine.chatMessages) { msg in
                     VStack(alignment: msg.role == "user" ? .trailing : .leading, spacing: 2) {
                         Text(msg.role == "user" ? "You" : "Assistant")
                             .font(.caption2.weight(.semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(msg.content.isEmpty ? "…" : msg.content)
                             .font(.body)
+                            .textSelection(.enabled)
                             .frame(maxWidth: .infinity,
                                    alignment: msg.role == "user" ? .trailing : .leading)
                     }
@@ -210,7 +194,7 @@ struct InferenceView: View {
                         Spacer()
                         Text(String(format: "%.1f tok/s", engine.tokensPerSecond))
                             .font(.caption.monospacedDigit())
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -244,7 +228,7 @@ struct InferenceView: View {
                 } label: {
                     Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundColor(
+                        .foregroundStyle(
                             chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isGenerating
                                 ? Color.secondary : Color.accentColor
                         )
@@ -254,7 +238,7 @@ struct InferenceView: View {
         }
 
         // Parameters
-        Section(header: Text("Parameters")) {
+        Section("Parameters") {
             HStack {
                 Text("Max tokens")
                 Spacer()
@@ -270,13 +254,12 @@ struct InferenceView: View {
         // Clear
         if !engine.chatMessages.isEmpty {
             Section {
-                Button {
+                Button(role: .destructive) {
                     engine.clearChat()
                 } label: {
                     Label("Clear conversation", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
-                .foregroundColor(.red)
             }
         }
     }
@@ -285,163 +268,114 @@ struct InferenceView: View {
 
     @ViewBuilder
     private var rpcWorkerSection: some View {
-        if showRPC {
-            let isRunning = rpcIsRunning
-            let interfaces = ShardNetwork.allLocalIPv4s
+        let isRunning = rpcIsRunning
+        let interfaces = ShardNetwork.allLocalIPv4s
 
-            // ── Endpoint card ─────────────────────────────────────────────────
-            Section(header: Text("Endpoints")) {
-                if interfaces.isEmpty {
-                    Label("No network interfaces found", systemImage: "wifi.slash")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(interfaces) { iface in
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(isRunning ? Color.green : Color.secondary.opacity(0.35))
-                                .frame(width: 9, height: 9)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: "RPC \(iface.ip):\(settings.port)")
-                                    .font(.system(.body, design: .monospaced).bold())
-                                Text(verbatim: "Storage \(iface.ip):\(settings.storagePort)")
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                Text(iface.label)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Button {
-                                UIPasteboard.general.string = "\(iface.ip):\(settings.port)"
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(Color.accentColor)
+        Section {
+            TextField("Phone nickname", text: $settings.nickname)
+                .disabled(isRunning)
+                .multilineTextAlignment(.center)
+                .font(.footnote)
+        }
+
+        Section("Endpoints") {
+            if interfaces.isEmpty {
+                Label("No network interfaces found", systemImage: "wifi.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(interfaces) { iface in
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(isRunning ? Color.green : Color.secondary.opacity(0.35))
+                            .frame(width: 9, height: 9)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: "RPC \(iface.ip)")
+                                .font(.system(.body, design: .monospaced).bold())
+                            Text(verbatim: "Storage \(iface.ip)")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                            Text(iface.label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 2)
+                        Spacer()
+                        Button {
+                            UIPasteboard.general.string = "\(iface.ip):\(RpcSettings.listenPort)"
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
                     }
+                    .padding(.vertical, 4)
                 }
             }
+        }
 
-            Section {
-                Button {
-                    showQRScanner = true
-                } label: {
-                    Label("Scan QR code", systemImage: "qrcode.viewfinder")
-                }
-
-                Button {
-                    guard let raw = UIPasteboard.general.string,
-                          !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                        importStatus = "Clipboard does not contain a connection URL."
-                        return
-                    }
-                    applyConnectionConfig(from: raw)
-                } label: {
-                    Label("Import from clipboard", systemImage: "doc.on.clipboard")
-                }
-
-                TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                    .keyboardType(.URL)
-
-                Button {
-                    applyConnectionConfig(from: connectionString)
-                } label: {
-                    Label("Apply connection string", systemImage: "link")
-                }
-                .disabled(connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                TextField("Coordinator URL", text: $serverURL)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                    .keyboardType(.URL)
-                    .onChange(of: serverURL) { _ in
-                        syncConnectionFields(fromServerURL: serverURL)
-                    }
-
-                TextField("Coordinator host", text: $clusterServerHost)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                    .keyboardType(.URL)
-                    .onChange(of: clusterServerHost) { _ in
-                        syncServerURLFromHostAndPort()
-                        syncRuntimeDiscoverySettings()
-                    }
-
-                IntStepperField("Coordinator port", value: $clusterServerPort, in: 1...65535, disabled: false)
-                    .onChange(of: clusterServerPort) { _ in
-                        syncServerURLFromHostAndPort()
-                        syncRuntimeDiscoverySettings()
-                    }
-
-                TextField("Token", text: $clusterToken)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-
-                if !importStatus.isEmpty {
-                    Text(importStatus)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                IntStepperField("Thread count", value: $settings.threads, in: 1...64, disabled: isRunning)
-                HStack {
-                    Text("Host")
-                    Spacer()
-                    TextField("0.0.0.0", text: $settings.host)
-                        .disabled(isRunning)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 160)
-                }
-                IntStepperField("Port", value: $settings.port, in: 1024...65535, disabled: isRunning)
-                IntStepperField("Storage Port", value: $settings.storagePort, in: 1024...65535, disabled: isRunning)
-            } header: {
-                Text("Coordinator")
-            } footer: {
-                Text("Paste a rmcluster://connect URL, scan a QR code, or manually edit the coordinator host, port, and token.")
+        Section {
+            Button {
+                showQRScanner = true
+            } label: {
+                Label("Scan QR code", systemImage: "qrcode.viewfinder")
             }
 
-            // ── Start / Stop ──────────────────────────────────────────────────
-            Section {
-                if case .unavailable(let msg) = engine.rpcServerState {
-                    Label(msg, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                } else if isRunning {
-                    Button {
-                        engine.stopRPCServer()
-                    } label: {
-                        Label("Stop RPC server", systemImage: "stop.circle")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .foregroundColor(.red)
-                } else {
-                    Button {
-                        syncRuntimeDiscoverySettings()
-                        engine.startRPCServer(
-                            host: settings.host,
-                            port: settings.port,
-                            storagePort: settings.storagePort,
-                            discoveryIp: settings.discoveryIp,
-                            discoveryPort: settings.discoveryPort,
-                            discoveryToken: clusterToken,
-                            threads: settings.threads,
-                            deviceId: settings.deviceId
-                        )
-                    } label: {
-                        Label(
-                            engine.rpcServerState == .starting ? "Starting…" : "Start RPC server",
-                            systemImage: "play.circle"
-                        )
+            TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+
+            if !importStatus.isEmpty {
+                Text(importStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Connection")
+        } footer: {
+            Text("Paste a rmcluster://connect URL, scan a QR code, or type the coordinator server IP, port, and token below.")
+        }
+
+        Section("Coordinator") {
+            TextField("Server IP or host", text: $clusterServerHost)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+
+            IntStepperField("Server port", value: $clusterServerPort, in: 1...65535, disabled: false)
+            IntStepperField("Thread count", value: $settings.threads, in: 1...64, disabled: isRunning)
+        }
+
+        Section {
+            if case .unavailable(let msg) = engine.rpcServerState {
+                Label(msg, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if isRunning {
+                Button(role: .destructive) {
+                    engine.stopRPCServer()
+                } label: {
+                    Label("Stop RPC server", systemImage: "stop.circle")
                         .frame(maxWidth: .infinity)
-                    }
-                    .disabled(engine.rpcServerState == .starting)
                 }
-
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            } else {
+                Button {
+                    guard prepareCoordinatorSettingsForStart() else { return }
+                    engine.startRPCServer(
+                        coordinatorHost: clusterServerHost,
+                        coordinatorPort: clusterServerPort,
+                        nickname: settings.nickname,
+                        threads: settings.threads,
+                        deviceId: settings.deviceId
+                    )
+                } label: {
+                    Text(engine.rpcServerState == .starting ? "Starting…" : "Start RPC server")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(engine.rpcServerState == .starting || !canStartRPCServer)
             }
         }
     }
@@ -453,19 +387,32 @@ struct InferenceView: View {
         return false
     }
 
-    private var rpcStateLabel: String {
-        switch engine.rpcServerState {
-        case .idle:                return "Stopped"
-        case .starting:            return "Starting…"
-        case .running(let ep):     return "Listening on \(ep)"
-        case .unavailable:         return "Unavailable – rebuild with GGML_RPC=ON"
-        }
+    private var canStartRPCServer: Bool {
+        let pendingConnection = !connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasCoordinatorHost = !clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return pendingConnection || hasCoordinatorHost
     }
 
-    private func applyConnectionConfig(from rawValue: String) {
+    private func prepareCoordinatorSettingsForStart() -> Bool {
+        let pendingConnection = connectionString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pendingConnection.isEmpty {
+            return applyConnectionConfig(from: pendingConnection)
+        }
+
+        if clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            importStatus = "Enter a coordinator server IP or paste a connection string."
+            return false
+        }
+
+        importStatus = ""
+        return true
+    }
+
+    @discardableResult
+    private func applyConnectionConfig(from rawValue: String) -> Bool {
         guard let parsed = ConnectionBootstrapPayload.parse(rawValue) else {
             importStatus = "Could not parse connection data."
-            return
+            return false
         }
 
         connectionString = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -473,41 +420,12 @@ struct InferenceView: View {
         if let port = parsed.port {
             clusterServerPort = port
         }
-        clusterToken = parsed.token ?? ""
-        if let device = parsed.device, !device.isEmpty {
-            clusterDeviceLabel = device
+        if let token = parsed.token, !token.isEmpty {
+            clusterToken = token
         }
-
-        syncRuntimeDiscoverySettings()
-        syncServerURLFromHostAndPort()
         selectedTab = 1
         importStatus = ""
-    }
-
-    private func syncServerURLFromHostAndPort() {
-        let trimmedHost = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty else { return }
-        serverURL = "http://\(trimmedHost):\(clusterServerPort)"
-    }
-
-    private func syncConnectionFields(fromServerURL urlText: String) {
-        let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard let parsed = ConnectionBootstrapPayload.parse(trimmed) else { return }
-        clusterServerHost = parsed.host
-        if let port = parsed.port {
-            clusterServerPort = port
-        }
-        clusterToken = parsed.token ?? ""
-        if let device = parsed.device, !device.isEmpty {
-            clusterDeviceLabel = device
-        }
-        syncRuntimeDiscoverySettings()
-    }
-
-    private func syncRuntimeDiscoverySettings() {
-        settings.discoveryIp = clusterServerHost
-        settings.discoveryPort = clusterServerPort
+        return true
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -557,13 +475,10 @@ private struct StatChip: View {
     let label: String
     var body: some View {
         Text(label)
-            .font(.system(.caption2, design: .monospaced))
+            .font(.caption2.monospaced())
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(Color(UIColor.quaternarySystemFill))
-            )
+            .background(.quaternary, in: Capsule())
     }
 }
 
@@ -613,6 +528,7 @@ private struct IntStepperField: View {
     let disabled: Bool
 
     @State private var text: String = ""
+    @FocusState private var focused: Bool
 
     init(_ label: String, value: Binding<Int>, in range: ClosedRange<Int>, disabled: Bool) {
         self.label    = label
@@ -630,12 +546,13 @@ private struct IntStepperField: View {
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 64)
+                .focused($focused)
                 .disabled(disabled)
-                .onChange(of: text) { _ in
-                    commitIfValid()
+                .onChange(of: focused) { isFocused in
+                    if !isFocused { commit() }
                 }
                 .onChange(of: value) { newVal in
-                    if text != String(newVal) { text = String(newVal) }
+                    if !focused { text = String(newVal) }
                 }
             Stepper("", value: $value, in: range, step: 1)
                 .labelsHidden()
@@ -646,20 +563,20 @@ private struct IntStepperField: View {
         }
     }
 
-    private func commitIfValid() {
-        if let parsed = Int(text), range.contains(parsed), parsed != value {
+    private func commit() {
+        if let parsed = Int(text), range.contains(parsed) {
             value = parsed
+        } else {
+            text = String(value)
         }
     }
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 
-struct InferenceView_Previews: PreviewProvider {
-    static var previews: some View {
-        InferenceView()
-            .environmentObject(InferenceEngine.shared)
-    }
+#Preview {
+    InferenceView()
+        .environmentObject(InferenceEngine.shared)
 }
 
 private struct ConnectionBootstrapPayload {
