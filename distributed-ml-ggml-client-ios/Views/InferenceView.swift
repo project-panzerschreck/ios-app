@@ -66,11 +66,11 @@ struct InferenceView: View {
                 List {
                     rpcWorkerSection
                 }
-                .navigationTitle("rmcluster node")
+                .navigationTitle("RMCluster Node")
                 .navigationBarTitleDisplayMode(.inline)
             }
             .navigationViewStyle(.stack)
-            .tabItem { Label("rmcluster node", systemImage: "network") }
+            .tabItem { Label("RMCluster Node", systemImage: "network") }
             .tag(1)
         }
         .sheet(isPresented: $showQRScanner) {
@@ -272,11 +272,24 @@ struct InferenceView: View {
         let interfaces = ShardNetwork.allLocalIPv4s
 
         Section {
-            TextField("Phone nickname", text: $settings.nickname)
-                .disabled(isRunning)
-                .multilineTextAlignment(.center)
-                .font(.footnote)
+            VStack(spacing: 4) {
+                TextField("Optional phone nickname", text: $settings.nickname)
+                    .disabled(isRunning)
+                    .multilineTextAlignment(.center)
+                    .font(.footnote)
+                    .frame(width: 200) 
+                    .padding(.bottom, 6) 
+                    .overlay(
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(.gray.opacity(0.5)),
+                        alignment: .bottom
+                    )
+            }
+            .frame(maxWidth: .infinity, alignment: .center) 
         }
+        .listRowBackground(Color.clear) 
+        .listRowSeparator(.hidden)
 
         Section("Endpoints") {
             if interfaces.isEmpty {
@@ -311,7 +324,7 @@ struct InferenceView: View {
                     .padding(.vertical, 4)
                 }
             }
-        }
+        }.padding(.top, -8)
 
         Section {
             Button {
