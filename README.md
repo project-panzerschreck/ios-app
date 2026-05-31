@@ -1,4 +1,6 @@
-# rmcluster node on iPhone 5 (iOS 10.3)
+# rmcluster node on iPhone 6 (iOS 12)
+
+For current branch-specific build steps, read [BUILDING.md](BUILDING.md).
 
 This repository contains a legacy UIKit / Objective-C port of the original one-screen SwiftUI app, rebuilt so it can run on an iPhone 5-class device:
 
@@ -566,4 +568,3 @@ packages/rmclusternode_1.0.0_unsigned.ipa
 ```
 
 That is the file you should drag into Sideloadly.
-
