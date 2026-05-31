@@ -48,14 +48,11 @@ test -d ../llama.cpp-rpc/include
 test -d ../llama.cpp-rpc/ggml/include
 ```
 
-The shared arm64 build also assumes your local `../llama.cpp-rpc` checkout includes the iOS 12 compatibility fixes used by this workspace, specifically in:
+The shared arm64 build assumes your local `../llama.cpp-rpc` checkout is on the branch that carries the iOS 12 compatibility work used for the arm64 builds in this repo:
 
-- `ggml/src/ggml-backend-dl.cpp`
-- `ggml/src/ggml-backend-dl.h`
-- `ggml/src/ggml-backend-reg.cpp`
-- `ggml/src/ggml-rpc/ggml-rpc.cpp`
+- `iphone6-build`
 
-Without those patches, the arm64 library build can fail on `std::filesystem` availability checks when targeting iOS 12.
+Without that branch, the arm64 library build can fail on `std::filesystem` availability checks when targeting iOS 12.
 
 ## 1. Build the arm64 XCFrameworks
 
