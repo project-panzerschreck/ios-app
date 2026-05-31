@@ -30,19 +30,11 @@ struct InferenceView: View {
     @State private var localModels: [URL] = []
 
     // ── RPC worker state ──────────────────────────────────────────────────────
-    @AppStorage("rpcHost") private var rpcHost: String = "0.0.0.0"
-    @AppStorage("rpcPort") private var rpcPort: Int = 50052
-    @AppStorage("rpcDiscoveryIp") private var rpcDiscoveryIp: String = ""
-    @AppStorage("rpcDiscoveryPort") private var rpcDiscoveryPort: Int = 4917
-    @AppStorage("rpcThreads") private var rpcThreads: Int = 4
     @AppStorage("clusterServerHost") private var clusterServerHost: String = ""
     @AppStorage("clusterServerPort") private var clusterServerPort: Int = 4917
-    @AppStorage("clusterDeviceLabel") private var clusterDeviceLabel: String = ""
     @AppStorage("clusterToken") private var clusterToken: String = ""
 
     @State private var connectionString: String = ""
-    @State private var serverURL:  String = ""
-    @State private var showRPC:    Bool   = true
     @State private var selectedTab: Int  = 1
     @State private var showQRScanner: Bool = false
     @State private var importStatus: String = ""
@@ -98,9 +90,6 @@ struct InferenceView: View {
         }
         .onAppear {
             refreshLocalModels()
-            if clusterDeviceLabel.isEmpty {
-                clusterDeviceLabel = UIDeviceLabel.current
-            }
         }
     }
 
@@ -279,171 +268,114 @@ struct InferenceView: View {
 
     @ViewBuilder
     private var rpcWorkerSection: some View {
-        if showRPC {
-            let isRunning = rpcIsRunning
-            let interfaces = ShardNetwork.allLocalIPv4s
+        let isRunning = rpcIsRunning
+        let interfaces = ShardNetwork.allLocalIPv4s
 
-            // ── Endpoint card ─────────────────────────────────────────────────
-            Section("Endpoints") {
-                if interfaces.isEmpty {
-                    Label("No network interfaces found", systemImage: "wifi.slash")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(interfaces) { iface in
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(isRunning ? Color.green : Color.secondary.opacity(0.35))
-                                .frame(width: 9, height: 9)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: "RPC \(iface.ip):\(settings.port)")
-                                    .font(.system(.body, design: .monospaced).bold())
-                                Text(verbatim: "Storage \(iface.ip):\(settings.storagePort)")
-                                    .font(.caption2.monospaced())
-                                    .foregroundStyle(.secondary)
-                                Text(iface.label)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button {
-                                UIPasteboard.general.string = "\(iface.ip):\(settings.port)"
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.accentColor)
+        Section {
+            TextField("Phone nickname", text: $settings.nickname)
+                .disabled(isRunning)
+                .multilineTextAlignment(.center)
+                .font(.footnote)
+        }
+
+        Section("Endpoints") {
+            if interfaces.isEmpty {
+                Label("No network interfaces found", systemImage: "wifi.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(interfaces) { iface in
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(isRunning ? Color.green : Color.secondary.opacity(0.35))
+                            .frame(width: 9, height: 9)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: "RPC \(iface.ip)")
+                                .font(.system(.body, design: .monospaced).bold())
+                            Text(verbatim: "Storage \(iface.ip)")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                            Text(iface.label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 2)
+                        Spacer()
+                        Button {
+                            UIPasteboard.general.string = "\(iface.ip):\(RpcSettings.listenPort)"
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
                     }
+                    .padding(.vertical, 4)
                 }
             }
+        }
 
-            Section {
-                Button {
-                    showQRScanner = true
-                } label: {
-                    Label("Scan QR code", systemImage: "qrcode.viewfinder")
-                }
-
-                Button {
-                    guard let raw = UIPasteboard.general.string,
-                          !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                        importStatus = "Clipboard does not contain a connection URL."
-                        return
-                    }
-                    applyConnectionConfig(from: raw)
-                } label: {
-                    Label("Import from clipboard", systemImage: "doc.on.clipboard")
-                }
-
-                TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .onSubmit { applyConnectionConfig(from: connectionString) }
-
-                Button {
-                    applyConnectionConfig(from: connectionString)
-                } label: {
-                    Label("Apply connection string", systemImage: "link")
-                }
-                .disabled(connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                TextField("Server URL", text: $serverURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .onChange(of: serverURL) { _ in
-                        syncConnectionFields(fromServerURL: serverURL)
-                    }
-
-                TextField("Server host", text: $clusterServerHost)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .onChange(of: clusterServerHost) { _ in
-                        syncServerURLFromHostAndPort()
-                    }
-
-                IntStepperField("Server port", value: $clusterServerPort, in: 1...65535, disabled: false)
-                    .onChange(of: clusterServerPort) { _ in
-                        syncServerURLFromHostAndPort()
-                    }
-
-                TextField("Token", text: $clusterToken)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                if !importStatus.isEmpty {
-                    Text(importStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                IntStepperField("Thread count", value: $settings.threads, in: 1...64, disabled: isRunning)
-                HStack {
-                    Text("Host")
-                    Spacer()
-                    TextField("0.0.0.0", text: $settings.host)
-                        .disabled(isRunning)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 160)
-                }
-                IntStepperField("Port", value: $settings.port, in: 1024...65535, disabled: isRunning)
-                IntStepperField("Storage Port", value: $settings.storagePort, in: 1024...65535, disabled: isRunning)
-                HStack {
-                    Text("Discovery IP")
-                    Spacer()
-                    TextField("LAN IP of server", text: $settings.discoveryIp)
-                        .disabled(isRunning)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 160)
-                }
-                IntStepperField("Discovery Port", value: $settings.discoveryPort, in: 1024...65535, disabled: isRunning)
-            } header: {
-                Text("Connection")
-            } footer: {
-                Text("Paste a rmcluster://connect URL, scan a QR code, or manually edit the host, port, and token.")
+        Section {
+            Button {
+                showQRScanner = true
+            } label: {
+                Label("Scan QR code", systemImage: "qrcode.viewfinder")
             }
 
-            // ── Start / Stop ──────────────────────────────────────────────────
-            Section {
-                if case .unavailable(let msg) = engine.rpcServerState {
-                    Label(msg, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                } else if isRunning {
-                    Button(role: .destructive) {
-                        engine.stopRPCServer()
-                    } label: {
-                        Label("Stop RPC server", systemImage: "stop.circle")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                } else {
-                    Button {
-                        engine.startRPCServer(
-                            host: settings.host,
-                            port: settings.port,
-                            storagePort: settings.storagePort,
-                            discoveryIp: settings.discoveryIp,
-                            discoveryPort: settings.discoveryPort,
-                            threads: settings.threads,
-                            deviceId: settings.deviceId
-                        )
-                    } label: {
-                        Label(
-                            engine.rpcServerState == .starting ? "Starting…" : "Start RPC server",
-                            systemImage: "play.circle"
-                        )
+            TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+
+            if !importStatus.isEmpty {
+                Text(importStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Connection")
+        } footer: {
+            Text("Paste a rmcluster://connect URL, scan a QR code, or type the coordinator server IP, port, and token below.")
+        }
+
+        Section("Coordinator") {
+            TextField("Server IP or host", text: $clusterServerHost)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+
+            IntStepperField("Server port", value: $clusterServerPort, in: 1...65535, disabled: false)
+            IntStepperField("Thread count", value: $settings.threads, in: 1...64, disabled: isRunning)
+        }
+
+        Section {
+            if case .unavailable(let msg) = engine.rpcServerState {
+                Label(msg, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if isRunning {
+                Button(role: .destructive) {
+                    engine.stopRPCServer()
+                } label: {
+                    Label("Stop RPC server", systemImage: "stop.circle")
                         .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(engine.rpcServerState == .starting)
                 }
-
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            } else {
+                Button {
+                    guard prepareCoordinatorSettingsForStart() else { return }
+                    engine.startRPCServer(
+                        coordinatorHost: clusterServerHost,
+                        coordinatorPort: clusterServerPort,
+                        nickname: settings.nickname,
+                        threads: settings.threads,
+                        deviceId: settings.deviceId
+                    )
+                } label: {
+                    Text(engine.rpcServerState == .starting ? "Starting…" : "Start RPC server")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(engine.rpcServerState == .starting || !canStartRPCServer)
             }
         }
     }
@@ -455,61 +387,45 @@ struct InferenceView: View {
         return false
     }
 
-    private var rpcStateLabel: String {
-        switch engine.rpcServerState {
-        case .idle:                return "Stopped"
-        case .starting:            return "Starting…"
-        case .running(let ep):     return "Listening on \(ep)"
-        case .unavailable:         return "Unavailable – rebuild with GGML_RPC=ON"
-        }
+    private var canStartRPCServer: Bool {
+        let pendingConnection = !connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasCoordinatorHost = !clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return pendingConnection || hasCoordinatorHost
     }
 
-    private func applyConnectionConfig(from rawValue: String) {
+    private func prepareCoordinatorSettingsForStart() -> Bool {
+        let pendingConnection = connectionString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pendingConnection.isEmpty {
+            return applyConnectionConfig(from: pendingConnection)
+        }
+
+        if clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            importStatus = "Enter a coordinator server IP or paste a connection string."
+            return false
+        }
+
+        importStatus = ""
+        return true
+    }
+
+    @discardableResult
+    private func applyConnectionConfig(from rawValue: String) -> Bool {
         guard let parsed = ConnectionBootstrapPayload.parse(rawValue) else {
             importStatus = "Could not parse connection data."
-            return
+            return false
         }
 
         connectionString = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         clusterServerHost = parsed.host
         if let port = parsed.port {
             clusterServerPort = port
-            rpcDiscoveryPort = port
         }
         if let token = parsed.token, !token.isEmpty {
             clusterToken = token
         }
-        if let device = parsed.device, !device.isEmpty {
-            clusterDeviceLabel = device
-        }
-
-        rpcDiscoveryIp = parsed.host
         selectedTab = 1
         importStatus = ""
-    }
-
-    private func syncServerURLFromHostAndPort() {
-        let trimmedHost = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty else { return }
-        serverURL = "http://\(trimmedHost):\(clusterServerPort)"
-    }
-
-    private func syncConnectionFields(fromServerURL urlText: String) {
-        let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard let parsed = ConnectionBootstrapPayload.parse(trimmed) else { return }
-        clusterServerHost = parsed.host
-        if let port = parsed.port {
-            clusterServerPort = port
-            rpcDiscoveryPort = port
-        }
-        if let token = parsed.token, !token.isEmpty {
-            clusterToken = token
-        }
-        if let device = parsed.device, !device.isEmpty {
-            clusterDeviceLabel = device
-        }
-        rpcDiscoveryIp = parsed.host
+        return true
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
