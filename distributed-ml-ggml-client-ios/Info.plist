@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>rmcluster node</string>
+	<string>RMCluster Node</string>
 	<key>CFBundleExecutable</key>
 	<string>rmclusternode</string>
 	<key>CFBundleIdentifier</key>

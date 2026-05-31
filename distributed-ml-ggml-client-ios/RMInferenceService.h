@@ -51,13 +51,11 @@ extern NSString * const RMInferenceServiceDidUpdateNotification;
 - (void)sendMessage:(NSString *)text maxTokens:(NSInteger)maxTokens temperature:(float)temperature;
 - (void)cancelGeneration;
 - (void)clearChat;
-- (void)startRPCServerWithHost:(NSString *)host
-                          port:(NSInteger)port
-                   storagePort:(NSInteger)storagePort
-                   discoveryIp:(NSString *)discoveryIp
-                 discoveryPort:(NSInteger)discoveryPort
-                       threads:(NSInteger)threads
-                      deviceId:(NSString *)deviceId;
+- (void)startRPCServerWithCoordinatorHost:(NSString *)coordinatorHost
+                          coordinatorPort:(NSInteger)coordinatorPort
+                                 nickname:(NSString *)nickname
+                                   threads:(NSInteger)threads
+                                  deviceId:(NSString *)deviceId;
 - (void)stopRPCServer;
 
 @end

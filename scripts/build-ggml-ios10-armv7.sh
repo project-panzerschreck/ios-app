@@ -41,7 +41,7 @@ command -v xcrun >/dev/null 2>&1 || die "xcrun not found"
 command -v lipo >/dev/null 2>&1 || die "lipo not found"
 command -v rsync >/dev/null 2>&1 || die "rsync not found"
 
-LEGACY_TOOLCHAIN_BIN="${LEGACY_TOOLCHAIN_BIN:-${PREFIX%/}}"
+LEGACY_TOOLCHAIN_BIN="${LEGACY_TOOLCHAIN_BIN:-${PREFIX:-}}"
 LEGACY_TOOLCHAIN_LIBCXX="${LEGACY_TOOLCHAIN_LIBCXX:-}"
 IOS10_SDK_ROOT="${IOS10_SDK_ROOT:-}"
 if [[ -z "$IOS10_SDK_ROOT" && -n "${THEOS:-}" && -d "$THEOS/sdks/iPhoneOS10.3.sdk" ]]; then

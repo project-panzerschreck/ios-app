@@ -1,17 +1,14 @@
 #import "RMRpcSettings.h"
 #import <UIKit/UIKit.h>
 
-static NSString * const RMRpcHostKey = @"rpcHost";
-static NSString * const RMRpcPortKey = @"rpcPort";
-static NSString * const RMStoragePortKey = @"rpcStoragePort";
-static NSString * const RMDiscoveryIpKey = @"rpcDiscoveryIp";
-static NSString * const RMDiscoveryPortKey = @"rpcDiscoveryPort";
+static NSString * const RMNicknameKey = @"rpcNickname";
 static NSString * const RMThreadsKey = @"rpcThreads";
 static NSString * const RMDeviceIdKey = @"rpcDeviceId";
 static NSString * const RMClusterServerHostKey = @"clusterServerHost";
 static NSString * const RMClusterServerPortKey = @"clusterServerPort";
-static NSString * const RMClusterDeviceLabelKey = @"clusterDeviceLabel";
-static NSString * const RMClusterTokenKey = @"clusterToken";
+static NSString * const RMLegacyDiscoveryIpKey = @"rpcDiscoveryIp";
+static NSString * const RMLegacyDiscoveryPortKey = @"rpcDiscoveryPort";
+static NSString * const RMLegacyDeviceLabelKey = @"clusterDeviceLabel";
 
 @implementation RMRpcSettings
 
@@ -33,22 +30,8 @@ static NSString * const RMClusterTokenKey = @"clusterToken";
     self = [super init];
     if (self) {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        _host = [[defaults stringForKey:RMRpcHostKey] ?: @"0.0.0.0" copy];
-        _port = [defaults integerForKey:RMRpcPortKey];
-        if (_port == 0) {
-            _port = 47651;
-        }
-
-        _storagePort = [defaults integerForKey:RMStoragePortKey];
-        if (_storagePort == 0) {
-            _storagePort = 47672;
-        }
-
-        _discoveryIp = [[defaults stringForKey:RMDiscoveryIpKey] ?: @"" copy];
-        _discoveryPort = [defaults integerForKey:RMDiscoveryPortKey];
-        if (_discoveryPort == 0) {
-            _discoveryPort = 50055;
-        }
+        NSString *legacyLabel = [defaults stringForKey:RMLegacyDeviceLabelKey];
+        _nickname = [[defaults stringForKey:RMNicknameKey] ?: legacyLabel ?: @"" copy];
 
         _threads = [defaults integerForKey:RMThreadsKey];
         if (_threads == 0) {
@@ -62,40 +45,20 @@ static NSString * const RMClusterTokenKey = @"clusterToken";
         }
         _deviceId = [existingDeviceId copy];
 
-        _clusterServerHost = [[defaults stringForKey:RMClusterServerHostKey] ?: @"" copy];
+        NSString *legacyHost = [defaults stringForKey:RMLegacyDiscoveryIpKey];
+        _clusterServerHost = [[defaults stringForKey:RMClusterServerHostKey] ?: legacyHost ?: @"" copy];
         _clusterServerPort = [defaults integerForKey:RMClusterServerPortKey];
         if (_clusterServerPort == 0) {
-            _clusterServerPort = 4917;
+            NSInteger legacyPort = [defaults integerForKey:RMLegacyDiscoveryPortKey];
+            _clusterServerPort = legacyPort > 0 ? legacyPort : 4917;
         }
-        _clusterDeviceLabel = [[defaults stringForKey:RMClusterDeviceLabelKey] ?: [UIDevice currentDevice].name ?: @"" copy];
-        _clusterToken = [[defaults stringForKey:RMClusterTokenKey] ?: @"" copy];
     }
     return self;
 }
 
-- (void)setHost:(NSString *)host {
-    _host = [host copy] ?: @"";
-    [[NSUserDefaults standardUserDefaults] setObject:_host forKey:RMRpcHostKey];
-}
-
-- (void)setPort:(NSInteger)port {
-    _port = port;
-    [[NSUserDefaults standardUserDefaults] setInteger:port forKey:RMRpcPortKey];
-}
-
-- (void)setStoragePort:(NSInteger)storagePort {
-    _storagePort = storagePort;
-    [[NSUserDefaults standardUserDefaults] setInteger:storagePort forKey:RMStoragePortKey];
-}
-
-- (void)setDiscoveryIp:(NSString *)discoveryIp {
-    _discoveryIp = [discoveryIp copy] ?: @"";
-    [[NSUserDefaults standardUserDefaults] setObject:_discoveryIp forKey:RMDiscoveryIpKey];
-}
-
-- (void)setDiscoveryPort:(NSInteger)discoveryPort {
-    _discoveryPort = discoveryPort;
-    [[NSUserDefaults standardUserDefaults] setInteger:discoveryPort forKey:RMDiscoveryPortKey];
+- (void)setNickname:(NSString *)nickname {
+    _nickname = [nickname copy] ?: @"";
+    [[NSUserDefaults standardUserDefaults] setObject:_nickname forKey:RMNicknameKey];
 }
 
 - (void)setThreads:(NSInteger)threads {
@@ -118,14 +81,16 @@ static NSString * const RMClusterTokenKey = @"clusterToken";
     [[NSUserDefaults standardUserDefaults] setInteger:clusterServerPort forKey:RMClusterServerPortKey];
 }
 
-- (void)setClusterDeviceLabel:(NSString *)clusterDeviceLabel {
-    _clusterDeviceLabel = [clusterDeviceLabel copy] ?: @"";
-    [[NSUserDefaults standardUserDefaults] setObject:_clusterDeviceLabel forKey:RMClusterDeviceLabelKey];
++ (NSString *)listenHost {
+    return @"0.0.0.0";
 }
 
-- (void)setClusterToken:(NSString *)clusterToken {
-    _clusterToken = [clusterToken copy] ?: @"";
-    [[NSUserDefaults standardUserDefaults] setObject:_clusterToken forKey:RMClusterTokenKey];
++ (NSInteger)listenPort {
+    return 47651;
+}
+
++ (NSInteger)storagePort {
+    return 47672;
 }
 
 - (NSURL *)storageDirectory {
