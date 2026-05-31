@@ -68,10 +68,12 @@ struct InferenceView: View {
                     rpcWorkerSection
                 }
                 .navigationTitle("RMCluster Node")
+                .navigationTitle("RMCluster Node")
                 .navigationBarTitleDisplayMode(.inline)
                 .modifier(CompactSectionSpacing())
             }
             .navigationViewStyle(.stack)
+            .tabItem { Label("RMCluster Node", systemImage: "network") }
             .tabItem { Label("RMCluster Node", systemImage: "network") }
             .tag(1)
         }
