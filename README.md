@@ -1,4 +1,8 @@
-# Distributed Inference – Build & Run Guide
+# Distributed Inference iOS App
+
+This repository contains the source code for the Reused Mobile Devices iOS Node Application. THe app allows you to connect iOS devices as compute nodes to the rmcluster backend.
+
+# Build & Run Guide
 
 Phones are **leaf/worker nodes only**. The Mac coordinator handles tokenization and sampling (CPU); all tensor compute runs on the phone(s) via GGML RPC.
 
