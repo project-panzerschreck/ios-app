@@ -31,7 +31,7 @@ Build a dedicated `llama-cli` that has Metal **disabled**. Without Metal, the on
 cmake -C rpc-only-init.cmake \
   -B build-mac-rpc-only \
   -DCMAKE_BUILD_TYPE=Release \
-  vendor/llama.cpp
+  ../llama.cpp-rpc
 ```
 
 `rpc-only-init.cmake` sets `GGML_METAL=OFF`, `GGML_RPC=ON`, and pre-caches the ARM SVE feature-detection result.

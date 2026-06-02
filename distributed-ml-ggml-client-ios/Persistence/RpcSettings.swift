@@ -4,33 +4,20 @@ import Combine
 /// Centralized persistence for all app settings.
 final class RpcSettings: ObservableObject {
     static let shared = RpcSettings()
+    static let listenHost = "0.0.0.0"
+    static let listenPort = 47651
+    static let storagePort = 47672
 
     enum Keys {
-        static let host = "rpcHost"
-        static let port = "rpcPort"
-        static let storagePort = "rpcStoragePort"
-        static let discoveryIp = "rpcDiscoveryIp"
-        static let discoveryPort = "rpcDiscoveryPort"
+        static let nickname = "rpcNickname"
         static let threads = "rpcThreads"
         static let deviceId = "rpcDeviceId"
     }
 
     // ── Persistence ──────────────────────────────────────────────────────────
 
-    @Published var host: String {
-        didSet { UserDefaults.standard.set(host, forKey: Keys.host) }
-    }
-    @Published var port: Int {
-        didSet { UserDefaults.standard.set(port, forKey: Keys.port) }
-    }
-    @Published var storagePort: Int {
-        didSet { UserDefaults.standard.set(storagePort, forKey: Keys.storagePort) }
-    }
-    @Published var discoveryIp: String {
-        didSet { UserDefaults.standard.set(discoveryIp, forKey: Keys.discoveryIp) }
-    }
-    @Published var discoveryPort: Int {
-        didSet { UserDefaults.standard.set(discoveryPort, forKey: Keys.discoveryPort) }
+    @Published var nickname: String {
+        didSet { UserDefaults.standard.set(nickname, forKey: Keys.nickname) }
     }
     @Published var threads: Int {
         didSet { UserDefaults.standard.set(threads, forKey: Keys.threads) }
@@ -40,19 +27,8 @@ final class RpcSettings: ObservableObject {
     }
 
     private init() {
-        self.host = UserDefaults.standard.string(forKey: Keys.host) ?? "0.0.0.0"
-        
-        let p = UserDefaults.standard.integer(forKey: Keys.port)
-        self.port = (p == 0) ? 47651 : p
-        
-        let sp = UserDefaults.standard.integer(forKey: Keys.storagePort)
-        self.storagePort = (sp == 0) ? 47672 : sp
-        
-        self.discoveryIp = UserDefaults.standard.string(forKey: Keys.discoveryIp) ?? ""
-        
-        let dp = UserDefaults.standard.integer(forKey: Keys.discoveryPort)
-        self.discoveryPort = (dp == 0) ? 50055 : dp
-        
+        self.nickname = UserDefaults.standard.string(forKey: Keys.nickname) ?? ""
+
         let t = UserDefaults.standard.integer(forKey: Keys.threads)
         self.threads = (t == 0) ? 4 : t
 
