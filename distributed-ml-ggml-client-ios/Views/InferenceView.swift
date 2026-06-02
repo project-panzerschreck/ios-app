@@ -271,25 +271,10 @@ struct InferenceView: View {
         let isRunning = rpcIsRunning
         let interfaces = ShardNetwork.allLocalIPv4s
 
-        Section {
-            VStack(spacing: 4) {
-                TextField("Optional phone nickname", text: $settings.nickname)
-                    .disabled(isRunning)
-                    .multilineTextAlignment(.center)
-                    .font(.footnote)
-                    .frame(width: 200) 
-                    .padding(.bottom, 6) 
-                    .overlay(
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.5)),
-                        alignment: .bottom
-                    )
-            }
-            .frame(maxWidth: .infinity, alignment: .center) 
+        Section("Node Name (Optional)") {
+            TextField("e.g. John's iPhone", text: $settings.nickname)
+                .disabled(isRunning)
         }
-        .listRowBackground(Color.clear) 
-        .listRowSeparator(.hidden)
 
         Section("Endpoints") {
             if interfaces.isEmpty {
