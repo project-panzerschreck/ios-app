@@ -406,7 +406,7 @@ struct InferenceView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(engine.rpcServerState == .starting || !canStartRPCServer)
+                .disabled(!canStartRPCServer)
             }
         }
     }
