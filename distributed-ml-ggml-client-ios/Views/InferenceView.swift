@@ -35,6 +35,7 @@ struct InferenceView: View {
     @AppStorage("clusterToken") private var clusterToken: String = ""
 
     @State private var connectionString: String = ""
+    @State private var endpointsExpanded: Bool = false
     @State private var selectedTab: Int  = 1
     @State private var showQRScanner: Bool = false
     @State private var importStatus: String = ""
@@ -68,6 +69,7 @@ struct InferenceView: View {
                 }
                 .navigationTitle("RMCluster Node")
                 .navigationBarTitleDisplayMode(.inline)
+                .modifier(CompactSectionSpacing())
             }
             .navigationViewStyle(.stack)
             .tabItem { Label("RMCluster Node", systemImage: "network") }
@@ -276,40 +278,58 @@ struct InferenceView: View {
                 .disabled(isRunning)
         }
 
-        Section("Endpoints") {
-            if interfaces.isEmpty {
-                Label("No network interfaces found", systemImage: "wifi.slash")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(interfaces) { iface in
-                    HStack(spacing: 12) {
-                        Circle()
-                            .fill(isRunning ? Color.green : Color.secondary.opacity(0.35))
-                            .frame(width: 9, height: 9)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: "RPC \(iface.ip)")
-                                .font(.system(.body, design: .monospaced).bold())
-                            Text(verbatim: "Storage \(iface.ip)")
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.secondary)
-                            Text(iface.label)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+        Section {
+            if endpointsExpanded {
+                if interfaces.isEmpty {
+                    Label("No network interfaces found", systemImage: "wifi.slash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(interfaces) { iface in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(isRunning ? Color.green : Color.secondary.opacity(0.35))
+                                .frame(width: 9, height: 9)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: "RPC \(iface.ip)")
+                                    .font(.system(.body, design: .monospaced).bold())
+                                Text(verbatim: "Storage \(iface.ip)")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                Text(iface.label)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                UIPasteboard.general.string = "\(iface.ip):\(RpcSettings.listenPort)"
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.accentColor)
                         }
-                        Spacer()
-                        Button {
-                            UIPasteboard.general.string = "\(iface.ip):\(RpcSettings.listenPort)"
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
             }
-        }.padding(.top, -8)
+        } header: {
+            Button {
+                withAnimation { endpointsExpanded.toggle() }
+            } label: {
+                HStack {
+                    Text("Endpoints")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .rotationEffect(.degrees(endpointsExpanded ? 90 : 0))
+                }
+            }
+            .buttonStyle(.plain)
+        }
 
         Section {
             Button {
@@ -318,7 +338,7 @@ struct InferenceView: View {
                 Label("Scan QR code", systemImage: "qrcode.viewfinder")
             }
 
-            TextField("Paste connection string or rmcluster:// URL", text: $connectionString)
+            TextField("Paste rmcluster:// connection URL", text: $connectionString)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
@@ -524,6 +544,17 @@ private struct DocumentPicker: UIViewControllerRepresentable {
                 .appendingPathComponent(url.lastPathComponent)
             try? FileManager.default.copyItem(at: url, to: dest)
             onPick(dest)
+        }
+    }
+}
+
+// ── Compact section spacing (iOS 17+) ────────────────────────────────────────
+private struct CompactSectionSpacing: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 17, *) {
+            content.listSectionSpacing(8)
+        } else {
+            content
         }
     }
 }
