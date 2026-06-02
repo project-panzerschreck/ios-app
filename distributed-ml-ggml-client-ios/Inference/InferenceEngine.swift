@@ -70,6 +70,7 @@ final class InferenceEngine: ObservableObject {
     private var generationTask: Task<Void, Never>?
     private var rpcServerTask:  Task<Void, Never>?
     private var discoveryTask:  Task<Void, Never>?
+    private var pendingRPCEndpoint: String?
     private var storageServer: StorageServer?
 
     static let shared = InferenceEngine()
@@ -260,17 +261,9 @@ final class InferenceEngine: ObservableObject {
         if storageServer.start(port: storagePort) {
             self.storageServer = storageServer
         } else {
-            self.storageServer = nil
+            rpcServerState = .unavailable("Storage server failed to start on port \(storagePort)")
+            return
         }
-
-        startDiscoveryPing(
-            coordinatorHost: coordinatorHost,
-            coordinatorPort: coordinatorPort,
-            servicePort: port,
-            storagePort: storagePort,
-            nickname: nickname,
-            deviceId: deviceId
-        )
 
         rpcServerTask = Task.detached(priority: .userInitiated) { [bridge] in
             if !LlamaBridge.rpcAvailable() {
@@ -307,10 +300,13 @@ final class InferenceEngine: ObservableObject {
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
                     await MainActor.run {
-                        self.rpcServerState = .running(endpoint: endpoint)
 #if canImport(UIKit)
                         UIApplication.shared.isIdleTimerDisabled = true
 #endif
+                        // Port is confirmed bound — record the endpoint and start
+                        // announcing. .running is set only when the coordinator
+                        // responds to the first announce, confirming connectivity.
+                        self.pendingRPCEndpoint = endpoint
                         self.startDiscoveryPing(
                             coordinatorHost: coordinatorHost,
                             coordinatorPort: coordinatorPort,
@@ -340,6 +336,7 @@ final class InferenceEngine: ObservableObject {
                 }
 
                 await MainActor.run {
+                    self.pendingRPCEndpoint = nil
                     self.rpcServerState = .idle
 #if canImport(UIKit)
                     UIApplication.shared.isIdleTimerDisabled = false
@@ -358,6 +355,7 @@ final class InferenceEngine: ObservableObject {
             }
 
             await MainActor.run {
+                self.pendingRPCEndpoint = nil
                 self.storageServer?.stop()
                 self.storageServer = nil
                 self.stopDiscoveryPing()
@@ -386,6 +384,7 @@ final class InferenceEngine: ObservableObject {
     func stopRPCServer() {
         rpcServerTask?.cancel()
         rpcServerTask = nil
+        pendingRPCEndpoint = nil
         stopDiscoveryPing()
         storageServer?.stop()
         storageServer = nil
@@ -460,6 +459,13 @@ final class InferenceEngine: ObservableObject {
                     if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         let intervalSec = (json["interval"] as? NSNumber)?.doubleValue ?? 10
+                        // First successful announce confirms coordinator connectivity.
+                        if let endpoint = await MainActor.run(body: { self.pendingRPCEndpoint }) {
+                            await MainActor.run {
+                                self.pendingRPCEndpoint = nil
+                                self.rpcServerState = .running(endpoint: endpoint)
+                            }
+                        }
                         try await Task.sleep(nanoseconds: UInt64(intervalSec * 1_000_000_000))
                     } else {
                         try await Task.sleep(nanoseconds: 1_000_000_000)

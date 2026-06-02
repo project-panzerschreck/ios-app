@@ -349,12 +349,23 @@ struct InferenceView: View {
                 Label(msg, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.red)
+            } else if engine.rpcServerState == .starting {
+                Button {
+                    engine.stopRPCServer()
+                } label: {
+                    Label("Cancel connection", systemImage: "xmark.circle")
+                        .frame(maxWidth: .infinity)
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
             } else if isRunning {
                 Button(role: .destructive) {
                     engine.stopRPCServer()
                 } label: {
-                    Label("Stop RPC server", systemImage: "stop.circle")
+                    Label("Disconnect from cluster", systemImage: "stop.circle")
                         .frame(maxWidth: .infinity)
+                        .foregroundStyle(.white)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
@@ -369,11 +380,11 @@ struct InferenceView: View {
                         deviceId: settings.deviceId
                     )
                 } label: {
-                    Text(engine.rpcServerState == .starting ? "Starting…" : "Start RPC server")
+                    Text("Connect to cluster")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(engine.rpcServerState == .starting || !canStartRPCServer)
+                .disabled(!canStartRPCServer)
             }
         }
     }
