@@ -89,7 +89,14 @@ The branch Makefile is already configured for:
 Build:
 
 ```sh
+export IOS16_SDK_ROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 make clean ipa
+```
+
+Or use the helper script:
+
+```sh
+bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa
 ```
 
 Output:

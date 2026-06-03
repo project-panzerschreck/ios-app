@@ -70,6 +70,9 @@ rmclusternode_FILES = \
 	distributed-ml-ggml-client-ios/RMRootViewController.m \
 	distributed-ml-ggml-client-ios/RMRpcSettings.m \
 	distributed-ml-ggml-client-ios/RMStorageServer.m \
+	distributed-ml-ggml-client-ios/RMLogsViewController.m \
+	distributed-ml-ggml-client-ios/Diagnostics/AppDiagnostics.m \
+	distributed-ml-ggml-client-ios/Diagnostics/RMAppLogger.m \
 	distributed-ml-ggml-client-ios/Bridge/LlamaBridge.mm
 
 rmclusternode_FRAMEWORKS = UIKit Foundation AVFoundation Metal Accelerate

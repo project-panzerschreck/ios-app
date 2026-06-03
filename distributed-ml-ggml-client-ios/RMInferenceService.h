@@ -15,6 +15,8 @@ typedef NS_ENUM(NSInteger, RMRPCServerState) {
     RMRPCServerStateIdle = 0,
     RMRPCServerStateStarting,
     RMRPCServerStateRunning,
+    RMRPCServerStateRecovering,
+    RMRPCServerStateDegraded,
     RMRPCServerStateUnavailable
 };
 
@@ -57,5 +59,7 @@ extern NSString * const RMInferenceServiceDidUpdateNotification;
                                    threads:(NSInteger)threads
                                   deviceId:(NSString *)deviceId;
 - (void)stopRPCServer;
+- (void)handleAppDidBecomeActive;
+- (void)handleAppWillResignActive;
 
 @end

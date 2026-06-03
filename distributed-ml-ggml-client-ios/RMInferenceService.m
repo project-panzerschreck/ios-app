@@ -2,10 +2,16 @@
 #import "RMChatMessage.h"
 #import "RMRpcSettings.h"
 #import "RMStorageServer.h"
+#import "Diagnostics/RMAppLogger.h"
 #import <UIKit/UIKit.h>
 #include <ifaddrs.h>
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/socket.h>
 #include <sys/sysctl.h>
+
+static const NSTimeInterval kRMStartupGraceInterval = 3.0;
+static const NSTimeInterval kRMHealthCheckTimeout = 2.0;
 
 NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceDidUpdateNotification";
 
@@ -27,6 +33,22 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 @property (nonatomic, assign) NSUInteger rpcSequence;
 @property (nonatomic, strong) RMStorageServer *storageServer;
 @property (nonatomic) dispatch_source_t discoveryTimer;
+@property (nonatomic) dispatch_source_t supervisorTimer;
+@property (nonatomic, assign) BOOL nodeShouldBeRunning;
+@property (nonatomic, assign) BOOL appIsActive;
+@property (nonatomic, assign) BOOL runtimeIsShuttingDown;
+@property (nonatomic, assign) BOOL rpcWorkerActive;
+@property (nonatomic, assign) BOOL rpcHealthy;
+@property (nonatomic, assign) BOOL storageHealthy;
+@property (nonatomic, copy) NSString *currentRPCEndpoint;
+@property (nonatomic, copy) NSString *lastRuntimeError;
+@property (nonatomic, copy) NSString *desiredCoordinatorHost;
+@property (nonatomic, assign) NSInteger desiredCoordinatorPort;
+@property (nonatomic, copy) NSString *desiredNickname;
+@property (nonatomic, assign) NSInteger desiredThreads;
+@property (nonatomic, copy) NSString *desiredDeviceId;
+@property (nonatomic, strong) NSDate *lastRPCStartAt;
+@property (nonatomic, strong) NSDate *lastStorageStartAt;
 
 @end
 
@@ -72,6 +94,9 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         _modelErrorMessage = @"";
         _rpcStatusMessage = @"";
         _rpcEndpoint = @"";
+        _currentRPCEndpoint = @"";
+        _lastRuntimeError = @"";
+        _appIsActive = YES;
     }
     return self;
 }
@@ -256,7 +281,9 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
                                  nickname:(NSString *)nickname
                                   threads:(NSInteger)threads
                                  deviceId:(NSString *)deviceId {
-    if (self.rpcServerState != RMRPCServerStateIdle) {
+    NSString *trimmedHost = [[coordinatorHost ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (trimmedHost.length == 0) {
+        [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"node.start.rejected reason=missing_coordinator_host"];
         return;
     }
 
@@ -268,76 +295,345 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         return;
     }
 
+    self.desiredCoordinatorHost = trimmedHost;
+    self.desiredCoordinatorPort = coordinatorPort;
+    self.desiredNickname = nickname ?: @"";
+    self.desiredThreads = MAX(1, threads);
+    self.desiredDeviceId = deviceId ?: @"";
+    self.nodeShouldBeRunning = YES;
+    self.runtimeIsShuttingDown = NO;
+    self.lastRuntimeError = @"";
     self.rpcSequence += 1;
-    NSUInteger sequence = self.rpcSequence;
-    NSString *host = [RMRpcSettings listenHost];
-    NSInteger port = [RMRpcSettings listenPort];
-    NSInteger storagePort = [RMRpcSettings storagePort];
-    self.storageServer = [[RMStorageServer alloc] initWithStorageDirectory:[[RMRpcSettings sharedSettings] storageDirectory]];
-    [self.storageServer startOnPort:storagePort];
 
-    [self startDiscoveryPingWithSequence:sequence
-                         coordinatorHost:coordinatorHost
-                         coordinatorPort:coordinatorPort
-                                nickname:nickname
-                             servicePort:port
-                             storagePort:storagePort
-                                deviceId:deviceId];
-
+    [RMAppLogger logWithLevel:@"INFO" tag:@"GENERAL" message:[NSString stringWithFormat:@"node.start.requested coordinator=%@:%ld", trimmedHost, (long)coordinatorPort]];
     [self notifyOnMain:^{
         self.rpcServerState = RMRPCServerStateStarting;
         self.rpcStatusMessage = @"Starting…";
         self.rpcEndpoint = @"";
-        [UIApplication sharedApplication].idleTimerDisabled = YES;
     }];
+    [self applyKeepAwakePolicy];
+    [self publishRuntimeHealthWithStatus:@"starting"];
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        __strong typeof(self) strongSelf = self;
-        if (strongSelf == nil || sequence != strongSelf.rpcSequence || strongSelf.rpcServerState != RMRPCServerStateStarting) {
-            return;
+    if (self.appIsActive) {
+        [self startNodeSupervisorIfNeeded];
+    } else {
+        [self notifyOnMain:^{
+            self.rpcServerState = RMRPCServerStateDegraded;
+            self.rpcStatusMessage = @"Waiting for app to become active";
+        }];
+        [self publishRuntimeHealthWithStatus:@"degraded"];
+    }
+}
+
+- (void)stopRPCServer {
+    [RMAppLogger logWithLevel:@"INFO" tag:@"GENERAL" message:@"node.stop.requested reason=user"];
+    [self stopNodeRuntimePreservingDesiredConfig:NO reason:@"Stopped by user"];
+}
+
+- (void)handleAppDidBecomeActive {
+    self.appIsActive = YES;
+    [RMAppLogger logWithLevel:@"INFO" tag:@"GENERAL" message:@"app.active"];
+    [self applyKeepAwakePolicy];
+    if (self.nodeShouldBeRunning) {
+        if (self.rpcServerState == RMRPCServerStateDegraded) {
+            [self notifyOnMain:^{
+                self.rpcServerState = RMRPCServerStateStarting;
+                self.rpcStatusMessage = @"Starting…";
+            }];
         }
-        strongSelf.rpcServerState = RMRPCServerStateRunning;
-        strongSelf.rpcEndpoint = [NSString stringWithFormat:@"%@:%ld", host ?: @"0.0.0.0", (long)port];
-        strongSelf.rpcStatusMessage = [NSString stringWithFormat:@"Listening on %@", strongSelf.rpcEndpoint];
-        [strongSelf postUpdate];
-    });
+        [self startNodeSupervisorIfNeeded];
+    } else {
+        [self publishRuntimeHealthWithStatus:@"idle"];
+    }
+}
 
+- (void)handleAppWillResignActive {
+    self.appIsActive = NO;
+    [RMAppLogger logWithLevel:@"INFO" tag:@"GENERAL" message:@"app.inactive stopping_runtime=true"];
+    if (self.nodeShouldBeRunning) {
+        [self stopNodeRuntimePreservingDesiredConfig:YES reason:@"App moved to background"];
+    } else {
+        [self applyKeepAwakePolicy];
+        [self publishRuntimeHealthWithStatus:@"idle"];
+    }
+}
+
+- (void)stopNodeRuntimePreservingDesiredConfig:(BOOL)preserve reason:(NSString *)reason {
+    self.runtimeIsShuttingDown = YES;
+    self.rpcSequence += 1;
+    [self stopDiscoveryPing];
+    [self stopNodeSupervisor];
+    [self stopRPCWorkerWithReason:reason];
+    [self stopStorageServer];
+
+    if (preserve) {
+        [self notifyOnMain:^{
+            self.rpcServerState = RMRPCServerStateDegraded;
+            self.rpcStatusMessage = reason ?: @"Degraded";
+            self.rpcEndpoint = @"";
+        }];
+    } else {
+        self.nodeShouldBeRunning = NO;
+        self.lastRuntimeError = @"";
+        self.currentRPCEndpoint = @"";
+        [self notifyOnMain:^{
+            self.rpcServerState = RMRPCServerStateIdle;
+            self.rpcStatusMessage = reason ?: @"Stopped";
+            self.rpcEndpoint = @"";
+        }];
+    }
+
+    self.rpcHealthy = NO;
+    self.storageHealthy = NO;
+    [self applyKeepAwakePolicy];
+    [self publishRuntimeHealthWithStatus:preserve ? @"degraded" : @"idle"];
+}
+
+- (void)startNodeSupervisorIfNeeded {
+    if (self.supervisorTimer != nil || !self.nodeShouldBeRunning || !self.appIsActive) {
+        return;
+    }
+    [RMAppLogger logWithLevel:@"INFO" tag:@"GENERAL" message:@"supervisor.start"];
+    dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
+    self.supervisorTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+    dispatch_source_set_timer(self.supervisorTimer, DISPATCH_TIME_NOW, (uint64_t)(1.0 * NSEC_PER_SEC), (uint64_t)(0.25 * NSEC_PER_SEC));
+    __weak typeof(self) weakSelf = self;
+    dispatch_source_set_event_handler(self.supervisorTimer, ^{
+        [weakSelf runNodeSupervisorIteration];
+    });
+    dispatch_resume(self.supervisorTimer);
+}
+
+- (void)stopNodeSupervisor {
+    if (self.supervisorTimer != nil) {
+        dispatch_source_cancel(self.supervisorTimer);
+        self.supervisorTimer = nil;
+    }
+}
+
+- (void)runNodeSupervisorIteration {
+    if (!self.nodeShouldBeRunning || !self.appIsActive) {
+        [self publishRuntimeHealthWithStatus:[self currentRuntimeStatusName]];
+        return;
+    }
+
+    [self applyKeepAwakePolicy];
+    [self startStorageServerIfNeeded];
+
+    if (!self.rpcWorkerActive) {
+        [self startRPCWorker];
+    }
+
+    BOOL rpcProbe = [self probeTCPOnHost:@"127.0.0.1" port:[RMRpcSettings listenPort]];
+    BOOL storageProbe = [self probeStorageHealth];
+    BOOL rpcWithinGrace = self.lastRPCStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastRPCStartAt] < kRMStartupGraceInterval;
+    BOOL storageWithinGrace = self.lastStorageStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastStorageStartAt] < kRMStartupGraceInterval;
+    BOOL effectiveRPCHealthy = rpcProbe || (self.rpcWorkerActive && rpcWithinGrace);
+    BOOL effectiveStorageHealthy = storageProbe || (self.storageServer != nil && storageWithinGrace);
+
+    self.rpcHealthy = effectiveRPCHealthy;
+    self.storageHealthy = effectiveStorageHealthy;
+
+    if (!effectiveStorageHealthy) {
+        self.lastRuntimeError = @"Storage server unhealthy";
+        [self notifyOnMain:^{
+            self.rpcServerState = RMRPCServerStateRecovering;
+            self.rpcStatusMessage = self.lastRuntimeError;
+        }];
+        [self publishRuntimeHealthWithStatus:@"recovering"];
+        if (!storageWithinGrace) {
+            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.storage_unhealthy action=restart_storage"];
+            [self restartStorageServer];
+        }
+        return;
+    }
+
+    if (!effectiveRPCHealthy) {
+        self.lastRuntimeError = @"RPC worker unhealthy";
+        [self notifyOnMain:^{
+            self.rpcServerState = RMRPCServerStateRecovering;
+            self.rpcStatusMessage = self.lastRuntimeError;
+        }];
+        [self publishRuntimeHealthWithStatus:@"recovering"];
+        if (!rpcWithinGrace) {
+            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.rpc_unhealthy action=restart_rpc"];
+            [self restartRPCWorkerWithReason:self.lastRuntimeError];
+        }
+        return;
+    }
+
+    NSString *endpoint = self.currentRPCEndpoint.length > 0 ? self.currentRPCEndpoint : [NSString stringWithFormat:@"%@:%ld", [RMRpcSettings listenHost], (long)[RMRpcSettings listenPort]];
+    [self notifyOnMain:^{
+        self.rpcServerState = RMRPCServerStateRunning;
+        self.rpcEndpoint = endpoint;
+        self.rpcStatusMessage = [NSString stringWithFormat:@"Listening on %@", endpoint];
+        self.lastRuntimeError = @"";
+    }];
+    [self publishRuntimeHealthWithStatus:@"running"];
+    [self sendDiscoveryAnnouncementToHost:self.desiredCoordinatorHost
+                                       port:self.desiredCoordinatorPort
+                                  nickname:self.desiredNickname
+                               servicePort:[RMRpcSettings listenPort]
+                               storagePort:[RMRpcSettings storagePort]
+                                  deviceId:self.desiredDeviceId];
+}
+
+- (BOOL)startStorageServerIfNeeded {
+    if (self.storageServer != nil) {
+        return YES;
+    }
+    NSInteger storagePort = [RMRpcSettings storagePort];
+    self.storageServer = [[RMStorageServer alloc] initWithStorageDirectory:[[RMRpcSettings sharedSettings] storageDirectory]];
+    if (![self.storageServer startOnPort:storagePort]) {
+        self.lastRuntimeError = [NSString stringWithFormat:@"Storage failed to bind port %ld", (long)storagePort];
+        [RMAppLogger logWithLevel:@"ERROR" tag:@"GENERAL" message:[NSString stringWithFormat:@"storage.runtime.start_failed port=%ld", (long)storagePort]];
+        return NO;
+    }
+    self.lastStorageStartAt = [NSDate date];
+    [RMAppLogger logWithLevel:@"INFO" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.runtime.started port=%ld", (long)storagePort]];
+    return YES;
+}
+
+- (void)restartStorageServer {
+    [self stopStorageServer];
+    [self startStorageServerIfNeeded];
+}
+
+- (void)stopStorageServer {
+    [self.storageServer stop];
+    self.storageServer = nil;
+}
+
+- (void)startRPCWorker {
+    if (self.rpcWorkerActive) {
+        return;
+    }
+    NSString *host = [RMRpcSettings listenHost];
+    NSInteger port = [RMRpcSettings listenPort];
+    self.currentRPCEndpoint = [NSString stringWithFormat:@"%@:%ld", host ?: @"0.0.0.0", (long)port];
+    self.lastRPCStartAt = [NSDate date];
+    self.rpcWorkerActive = YES;
+    self.runtimeIsShuttingDown = NO;
+    NSUInteger sequence = self.rpcSequence;
+
+    [RMAppLogger logWithLevel:@"INFO" tag:@"RPC SERVER" message:[NSString stringWithFormat:@"rpc.start.begin endpoint=%@", self.currentRPCEndpoint]];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSUInteger totalMB = [LlamaBridge processMemoryBudgetBytes] / 1048576ULL;
         NSUInteger freeMB = [LlamaBridge processAvailableMemoryBytes] / 1048576ULL;
         NSString *cacheDir = [[[NSFileManager defaultManager] URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject path];
-        NSString *endpoint = [NSString stringWithFormat:@"%@:%ld", host ?: @"0.0.0.0", (long)port];
-        [self.bridge startRPCServer:endpoint
+        [self.bridge startRPCServer:self.currentRPCEndpoint
                            cacheDir:cacheDir
                              freeMB:freeMB
                             totalMB:totalMB
-                            threads:(NSUInteger)MAX(1, threads)];
-        [self notifyOnMain:^{
+                            threads:(NSUInteger)MAX(1, self.desiredThreads)];
+        dispatch_async(dispatch_get_main_queue(), ^{
             if (sequence != self.rpcSequence) {
                 return;
             }
-            [self stopDiscoveryPing];
-            [self.storageServer stop];
-            self.storageServer = nil;
-            self.rpcServerState = RMRPCServerStateIdle;
-            self.rpcStatusMessage = @"Stopped";
-            self.rpcEndpoint = @"";
-            [UIApplication sharedApplication].idleTimerDisabled = NO;
-        }];
+            self.rpcWorkerActive = NO;
+            if (!self.runtimeIsShuttingDown && self.nodeShouldBeRunning && self.appIsActive) {
+                self.lastRuntimeError = @"RPC worker exited unexpectedly";
+                [RMAppLogger logWithLevel:@"ERROR" tag:@"RPC SERVER" message:@"rpc.exit.unexpected"];
+                self.rpcServerState = RMRPCServerStateRecovering;
+                self.rpcStatusMessage = self.lastRuntimeError;
+                [self publishRuntimeHealthWithStatus:@"recovering"];
+            }
+            [self postUpdate];
+        });
     });
 }
 
-- (void)stopRPCServer {
-    self.rpcSequence += 1;
-    [self stopDiscoveryPing];
-    [self.storageServer stop];
-    self.storageServer = nil;
-    [self notifyOnMain:^{
-        self.rpcServerState = RMRPCServerStateIdle;
-        self.rpcStatusMessage = @"Stopped";
-        self.rpcEndpoint = @"";
-        [UIApplication sharedApplication].idleTimerDisabled = NO;
+- (void)stopRPCWorkerWithReason:(NSString *)reason {
+    if (!self.rpcWorkerActive && self.currentRPCEndpoint.length == 0) {
+        return;
+    }
+    [RMAppLogger logWithLevel:@"INFO" tag:@"RPC SERVER" message:[NSString stringWithFormat:@"rpc.stop.requested reason=%@", reason ?: @""]];
+    self.runtimeIsShuttingDown = YES;
+    if (self.currentRPCEndpoint.length > 0) {
+        [self.bridge stopRPCServer:self.currentRPCEndpoint];
+    }
+    self.rpcWorkerActive = NO;
+}
+
+- (void)restartRPCWorkerWithReason:(NSString *)reason {
+    [self stopRPCWorkerWithReason:reason];
+    self.rpcWorkerActive = NO;
+    [self startRPCWorker];
+}
+
+- (BOOL)probeTCPOnHost:(NSString *)host port:(NSInteger)port {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return NO;
+    }
+    struct timeval timeout;
+    timeout.tv_sec = (time_t)kRMHealthCheckTimeout;
+    timeout.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    inet_pton(AF_INET, host.UTF8String, &addr.sin_addr);
+
+    BOOL connected = connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0;
+    close(sock);
+    return connected;
+}
+
+- (BOOL)probeStorageHealth {
+    if (self.storageServer == nil) {
+        return NO;
+    }
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://127.0.0.1:%ld/storage_info", (long)[RMRpcSettings storagePort]]];
+    if (url == nil) {
+        return NO;
+    }
+    NSURLRequest *request = [NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:kRMHealthCheckTimeout];
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block BOOL healthy = NO;
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (error == nil) {
+            NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
+            healthy = http.statusCode == 200;
+        }
+        dispatch_semaphore_signal(sem);
+    }] resume];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((kRMHealthCheckTimeout + 1.0) * NSEC_PER_SEC)));
+    return healthy;
+}
+
+- (void)applyKeepAwakePolicy {
+    [UIApplication sharedApplication].idleTimerDisabled = self.nodeShouldBeRunning && self.appIsActive;
+}
+
+- (void)publishRuntimeHealthWithStatus:(NSString *)status {
+    [RMAppLogger rpcHealthWithStatus:status details:@{
+        @"endpoint": self.currentRPCEndpoint ?: @"",
+        @"coordinator": self.desiredCoordinatorHost.length > 0 ? [NSString stringWithFormat:@"%@:%ld", self.desiredCoordinatorHost, (long)self.desiredCoordinatorPort] : @"",
+        @"last_error": self.lastRuntimeError ?: @"",
+        @"rpc_healthy": @(self.rpcHealthy),
+        @"storage_healthy": @(self.storageHealthy),
     }];
+}
+
+- (NSString *)currentRuntimeStatusName {
+    switch (self.rpcServerState) {
+        case RMRPCServerStateStarting:
+            return @"starting";
+        case RMRPCServerStateRunning:
+            return @"running";
+        case RMRPCServerStateRecovering:
+            return @"recovering";
+        case RMRPCServerStateDegraded:
+            return @"degraded";
+        case RMRPCServerStateUnavailable:
+            return @"unavailable";
+        default:
+            return @"idle";
+    }
 }
 
 - (void)startDiscoveryPingWithSequence:(NSUInteger)sequence

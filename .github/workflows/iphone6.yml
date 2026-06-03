@@ -39,8 +39,9 @@ jobs:
       - name: Build unsigned IPA
         env:
           THEOS: ${{ env.HOME }}/theos
-          IOS16_SDK_ROOT: $(xcrun --sdk iphoneos --show-sdk-path)
-        run: bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa
+        run: |
+          export IOS16_SDK_ROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+          bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4

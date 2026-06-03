@@ -1,5 +1,6 @@
 #import "AppDelegate.h"
 #import "RMRootViewController.h"
+#import "RMInferenceService.h"
 
 NSString * const RMOpenURLNotification = @"RMOpenURLNotification";
 
@@ -15,7 +16,21 @@ NSString * const RMOpenURLNotification = @"RMOpenURLNotification";
     if (launchURL != nil) {
         [self postOpenURLNotification:launchURL];
     }
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appWillResignActive) name:UIApplicationWillResignActiveNotification object:nil];
     return YES;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)appDidBecomeActive {
+    [[RMInferenceService sharedService] handleAppDidBecomeActive];
+}
+
+- (void)appWillResignActive {
+    [[RMInferenceService sharedService] handleAppWillResignActive];
 }
 
 - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options {

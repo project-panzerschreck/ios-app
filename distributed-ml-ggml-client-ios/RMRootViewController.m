@@ -5,6 +5,7 @@
 #import "RMInferenceService.h"
 #import "RMQRScannerViewController.h"
 #import "RMRpcSettings.h"
+#import "RMLogsViewController.h"
 #import <objc/runtime.h>
 
 @interface RMRootViewController () <UIDocumentPickerDelegate, UITextFieldDelegate>
@@ -16,6 +17,8 @@
 @property (nonatomic, strong) UIStackView *contentStack;
 @property (nonatomic, strong) UIStackView *inferencePane;
 @property (nonatomic, strong) UIStackView *rpcPane;
+@property (nonatomic, strong) RMLogsViewController *logsViewController;
+@property (nonatomic, strong) UIView *logsContainer;
 
 @property (nonatomic, strong) UIStackView *modelButtonsStack;
 @property (nonatomic, strong) UILabel *modelStatusLabel;
@@ -69,7 +72,7 @@
 }
 
 - (void)buildUI {
-    self.segmentControl = [[UISegmentedControl alloc] initWithItems:@[ @"Inference", @"RMCluster Node" ]];
+    self.segmentControl = [[UISegmentedControl alloc] initWithItems:@[ @"Inference", @"RMCluster Node", @"Logs" ]];
     self.segmentControl.selectedSegmentIndex = 0;
     [self.segmentControl addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
     self.segmentControl.translatesAutoresizingMaskIntoConstraints = NO;
@@ -120,6 +123,28 @@
 
     [self buildInferencePane];
     [self buildRPCPane];
+
+    self.logsContainer = [[UIView alloc] init];
+    self.logsContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    self.logsContainer.hidden = YES;
+    [self.view addSubview:self.logsContainer];
+
+    self.logsViewController = [[RMLogsViewController alloc] init];
+    [self addChildViewController:self.logsViewController];
+    self.logsViewController.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.logsContainer addSubview:self.logsViewController.view];
+    [self.logsViewController didMoveToParentViewController:self];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.logsContainer.topAnchor constraintEqualToAnchor:self.segmentControl.bottomAnchor constant:12.0],
+        [self.logsContainer.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.logsContainer.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.logsContainer.bottomAnchor constraintEqualToAnchor:bottomAnchor],
+        [self.logsViewController.view.topAnchor constraintEqualToAnchor:self.logsContainer.topAnchor],
+        [self.logsViewController.view.leadingAnchor constraintEqualToAnchor:self.logsContainer.leadingAnchor],
+        [self.logsViewController.view.trailingAnchor constraintEqualToAnchor:self.logsContainer.trailingAnchor],
+        [self.logsViewController.view.bottomAnchor constraintEqualToAnchor:self.logsContainer.bottomAnchor],
+    ]];
 }
 
 - (UIStackView *)verticalStack {
@@ -481,6 +506,14 @@
             [self.rpcStartStopButton setTitle:@"Disconnect" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
+        case RMRPCServerStateRecovering:
+            [self.rpcStartStopButton setTitle:@"Recovering…" forState:UIControlStateNormal];
+            self.rpcStartStopButton.enabled = NO;
+            break;
+        case RMRPCServerStateDegraded:
+            [self.rpcStartStopButton setTitle:@"Start RPC server" forState:UIControlStateNormal];
+            self.rpcStartStopButton.enabled = YES;
+            break;
         case RMRPCServerStateUnavailable:
             [self.rpcStartStopButton setTitle:@"Start RPC server" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
@@ -516,8 +549,12 @@
 
 - (void)segmentChanged:(UISegmentedControl *)sender {
     BOOL showingInference = sender.selectedSegmentIndex == 0;
+    BOOL showingRPC = sender.selectedSegmentIndex == 1;
+    BOOL showingLogs = sender.selectedSegmentIndex == 2;
     self.inferencePane.hidden = !showingInference;
-    self.rpcPane.hidden = showingInference;
+    self.rpcPane.hidden = !showingRPC;
+    self.scrollView.hidden = showingLogs;
+    self.logsContainer.hidden = !showingLogs;
 }
 
 - (void)localModelTapped:(UIButton *)sender {
