@@ -292,13 +292,14 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     }];
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (sequence != self.rpcSequence || self.rpcServerState != RMRPCServerStateStarting) {
+        __strong typeof(self) strongSelf = self;
+        if (strongSelf == nil || sequence != strongSelf.rpcSequence || strongSelf.rpcServerState != RMRPCServerStateStarting) {
             return;
         }
-        self.rpcServerState = RMRPCServerStateRunning;
-        self.rpcEndpoint = [NSString stringWithFormat:@"%@:%ld", host ?: @"0.0.0.0", (long)port];
-        self.rpcStatusMessage = [NSString stringWithFormat:@"Listening on %@", self.rpcEndpoint];
-        [self postUpdate];
+        strongSelf.rpcServerState = RMRPCServerStateRunning;
+        strongSelf.rpcEndpoint = [NSString stringWithFormat:@"%@:%ld", host ?: @"0.0.0.0", (long)port];
+        strongSelf.rpcStatusMessage = [NSString stringWithFormat:@"Listening on %@", strongSelf.rpcEndpoint];
+        [strongSelf postUpdate];
     });
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
