@@ -69,7 +69,7 @@
 }
 
 - (void)buildUI {
-    self.segmentControl = [[UISegmentedControl alloc] initWithItems:@[ @"Inference", @"GGML RPC Worker" ]];
+    self.segmentControl = [[UISegmentedControl alloc] initWithItems:@[ @"Inference", @"RMCluster Node" ]];
     self.segmentControl.selectedSegmentIndex = 0;
     [self.segmentControl addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
     self.segmentControl.translatesAutoresizingMaskIntoConstraints = NO;
