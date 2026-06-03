@@ -1,4 +1,5 @@
 #import "RMStorageServer.h"
+#import "RMAppLogger.h"
 #import <CommonCrypto/CommonDigest.h>
 #include <arpa/inet.h>
 #include <errno.h>
@@ -7,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <string.h>
 #include <unistd.h>
 
 static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
@@ -42,7 +44,7 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
 @property (nonatomic, strong) dispatch_queue_t serverQueue;
 @property (nonatomic, strong) dispatch_source_t acceptSource;
 @property (nonatomic, strong) RMStorageServerHealthSnapshot *healthCache;
-@property (nonatomic, assign, getter=isRunning) BOOL running;
+@property (nonatomic, assign, readwrite, getter=isRunning) BOOL running;
 
 @end
 
@@ -63,16 +65,20 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
         return YES;
     }
 
+    [self stop];
+
     NSError *directoryError = nil;
     if (![[NSFileManager defaultManager] createDirectoryAtURL:self.storageDirectory
                                   withIntermediateDirectories:YES
                                                    attributes:nil
                                                         error:&directoryError]) {
+        [RMAppLogger logWithLevel:@"ERROR" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.mkdir.failed path=%@ error=%@", self.storageDirectory.path, directoryError.localizedDescription ?: @"unknown"]];
         return NO;
     }
 
     int socketFD = socket(AF_INET, SOCK_STREAM, 0);
     if (socketFD < 0) {
+        [RMAppLogger logWithLevel:@"ERROR" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.socket.failed port=%ld errno=%d (%s)", (long)port, errno, strerror(errno)]];
         return NO;
     }
 
@@ -87,11 +93,13 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
     addr.sin_port = htons((uint16_t)port);
 
     if (bind(socketFD, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        [RMAppLogger logWithLevel:@"ERROR" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.bind.failed port=%ld errno=%d (%s)", (long)port, errno, strerror(errno)]];
         close(socketFD);
         return NO;
     }
 
     if (listen(socketFD, 16) < 0) {
+        [RMAppLogger logWithLevel:@"ERROR" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.listen.failed port=%ld errno=%d (%s)", (long)port, errno, strerror(errno)]];
         close(socketFD);
         return NO;
     }
@@ -117,21 +125,28 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
         }
     });
     dispatch_resume(acceptSource);
+    [RMAppLogger logWithTag:@"STORAGE" message:[NSString stringWithFormat:@"storage.bind.ok port=%ld path=%@", (long)port, self.storageDirectory.path]];
     return YES;
 }
 
 - (void)stop {
+    if (!self.isRunning && self.listeningSocket < 0) {
+        return;
+    }
+
     self.running = NO;
     self.healthCache = nil;
 
     if (self.acceptSource != nil) {
-        dispatch_source_cancel(self.acceptSource);
+        dispatch_source_t source = self.acceptSource;
         self.acceptSource = nil;
-    } else if (self.listeningSocket >= 0) {
-        close(self.listeningSocket);
+        dispatch_source_cancel(source);
     }
 
-    self.listeningSocket = -1;
+    if (self.listeningSocket >= 0) {
+        close(self.listeningSocket);
+        self.listeningSocket = -1;
+    }
 }
 
 - (void)acceptPendingConnections {

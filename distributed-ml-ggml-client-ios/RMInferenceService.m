@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <netdb.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
 
@@ -412,9 +413,14 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 }
 
 - (BOOL)startStorageServerIfNeeded {
-    if (self.storageServer != nil) {
+    if (self.storageServer.isRunning) {
         return YES;
     }
+
+    if (self.storageServer != nil) {
+        [self stopStorageServer];
+    }
+
     NSInteger storagePort = [RMRpcSettings storagePort];
     self.storageServer = [[RMStorageServer alloc] initWithStorageDirectory:[[RMRpcSettings sharedSettings] storageDirectory]];
     BOOL started = [self.storageServer startOnPort:storagePort];
@@ -422,6 +428,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         self.lastStorageStartAt = [NSDate date];
         [RMAppLogger logWithTag:@"STORAGE" message:[NSString stringWithFormat:@"storage.runtime.started port=%ld", (long)storagePort]];
     } else {
+        self.storageServer = nil;
         self.lastRuntimeError = [NSString stringWithFormat:@"Storage failed to bind port %ld", (long)storagePort];
         [RMAppLogger logWithLevel:@"ERROR" tag:@"GENERAL" message:self.lastRuntimeError];
     }
@@ -529,13 +536,30 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         self.storageHealthy = NO;
         self.announceEligible = NO;
         self.discoveryActive = NO;
+        [self notifyOnMain:^{
+            self.rpcServerState = RMRPCServerStateRecovering;
+            self.rpcStatusMessage = self.lastRuntimeError.length > 0 ? self.lastRuntimeError : @"Storage server unhealthy";
+        }];
+        [self publishRuntimeHealthWithStatusOverride:@"recovering"];
+        return 2.0;
+    }
+
+    BOOL storageProbe = [self storageHealthProbe];
+    if (!storageProbe) {
+        self.storageHealthy = NO;
+        self.announceEligible = NO;
+        self.discoveryActive = NO;
         self.lastRuntimeError = @"Storage server unhealthy";
         [self notifyOnMain:^{
             self.rpcServerState = RMRPCServerStateRecovering;
             self.rpcStatusMessage = self.lastRuntimeError;
         }];
         [self publishRuntimeHealthWithStatusOverride:@"recovering"];
-        [self restartStorageServer];
+        BOOL storageWithinGrace = self.lastStorageStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastStorageStartAt] < 2.0;
+        if (!storageWithinGrace) {
+            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.storage_unhealthy action=restart_storage announce=skipped"];
+            [self restartStorageServer];
+        }
         return 2.0;
     }
 
@@ -544,30 +568,12 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     }
 
     BOOL rpcProbe = [self.class probeTCPHost:@"127.0.0.1" port:[RMRpcSettings listenPort] timeout:1.5];
-    BOOL storageProbe = [self storageHealthProbe];
     BOOL rpcWithinGrace = self.lastRPCStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastRPCStartAt] < 2.0;
-    BOOL storageWithinGrace = self.lastStorageStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastStorageStartAt] < 2.0;
     BOOL effectiveRPCHealthy = rpcProbe || (self.rpcWorkerActive && rpcWithinGrace);
-    BOOL effectiveStorageHealthy = storageProbe || (self.storageServer != nil && storageWithinGrace);
 
     self.rpcHealthy = effectiveRPCHealthy;
-    self.storageHealthy = effectiveStorageHealthy;
-    self.announceEligible = self.rpcHealthy && self.storageHealthy;
-
-    if (!self.storageHealthy) {
-        self.discoveryActive = NO;
-        self.lastRuntimeError = @"Storage server unhealthy";
-        [self notifyOnMain:^{
-            self.rpcServerState = RMRPCServerStateRecovering;
-            self.rpcStatusMessage = self.lastRuntimeError;
-        }];
-        [self publishRuntimeHealthWithStatusOverride:@"recovering"];
-        if (!storageWithinGrace) {
-            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.storage_unhealthy action=restart_storage announce=skipped"];
-            [self restartStorageServer];
-        }
-        return 2.0;
-    }
+    self.storageHealthy = YES;
+    self.announceEligible = self.rpcHealthy;
 
     if (!self.rpcHealthy) {
         self.discoveryActive = NO;
@@ -599,25 +605,49 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 }
 
 - (BOOL)storageHealthProbe {
-    if (self.storageServer == nil) {
+    if (!self.storageServer.isRunning) {
         return NO;
     }
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://127.0.0.1:%ld/storage_info", (long)[RMRpcSettings storagePort]]];
-    if (url == nil) {
+
+    NSInteger storagePort = [RMRpcSettings storagePort];
+    if (![self.class probeTCPHost:@"127.0.0.1" port:storagePort timeout:1.5]) {
         return NO;
     }
-    NSURLRequest *request = [NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:1.5];
-    __block BOOL healthy = NO;
-    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error == nil) {
-            NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-            healthy = http.statusCode == 200;
-        }
-        dispatch_semaphore_signal(sema);
-    }] resume];
-    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
-    return healthy;
+
+    int socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    if (socketFD < 0) {
+        return NO;
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)storagePort);
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    if (connect(socketFD, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(socketFD);
+        return NO;
+    }
+
+    NSString *request = @"GET /storage_info HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    const char *requestBytes = request.UTF8String;
+    if (send(socketFD, requestBytes, strlen(requestBytes), 0) < 0) {
+        close(socketFD);
+        return NO;
+    }
+
+    char buffer[512];
+    ssize_t readCount = recv(socketFD, buffer, sizeof(buffer) - 1, 0);
+    close(socketFD);
+    if (readCount <= 0) {
+        return NO;
+    }
+
+    buffer[readCount] = '\0';
+    NSString *response = [NSString stringWithUTF8String:buffer];
+    return [response containsString:@"200"];
 }
 
 - (NSTimeInterval)announceToCoordinator {
