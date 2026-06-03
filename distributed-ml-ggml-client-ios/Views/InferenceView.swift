@@ -338,7 +338,7 @@ struct InferenceView: View {
                 Label("Scan QR code", systemImage: "qrcode.viewfinder")
             }
 
-            TextField("Paste rmcluster:// connection URL", text: $connectionString)
+            TextField("Paste rmcluster:// connection URL ", text: $connectionString)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
