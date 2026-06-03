@@ -17,7 +17,7 @@
 @property (nonatomic, strong) UIStackView *contentStack;
 @property (nonatomic, strong) UIStackView *inferencePane;
 @property (nonatomic, strong) UIStackView *rpcPane;
-@property (nonatomic, strong) UIView *logsPane;
+@property (nonatomic, strong) UIView *logsContainer;
 @property (nonatomic, strong) RMLogsViewController *logsViewController;
 
 @property (nonatomic, strong) UIStackView *modelButtonsStack;
@@ -88,36 +88,22 @@
 
     self.inferencePane = [self verticalStack];
     self.rpcPane = [self verticalStack];
-    self.logsPane = [[UIView alloc] init];
-    self.logsPane.translatesAutoresizingMaskIntoConstraints = NO;
     [self.contentStack addArrangedSubview:self.inferencePane];
     [self.contentStack addArrangedSubview:self.rpcPane];
-    [self.contentStack addArrangedSubview:self.logsPane];
     self.rpcPane.hidden = YES;
-    self.logsPane.hidden = YES;
 
-    self.logsViewController = [[RMLogsViewController alloc] init];
-    [self addChildViewController:self.logsViewController];
-    self.logsViewController.view.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.logsPane addSubview:self.logsViewController.view];
-    [NSLayoutConstraint activateConstraints:@[
-        [self.logsViewController.view.topAnchor constraintEqualToAnchor:self.logsPane.topAnchor],
-        [self.logsViewController.view.leadingAnchor constraintEqualToAnchor:self.logsPane.leadingAnchor],
-        [self.logsViewController.view.trailingAnchor constraintEqualToAnchor:self.logsPane.trailingAnchor],
-        [self.logsViewController.view.bottomAnchor constraintEqualToAnchor:self.logsPane.bottomAnchor],
-        [self.logsPane.heightAnchor constraintGreaterThanOrEqualToConstant:400.0],
-    ]];
-    [self.logsViewController didMoveToParentViewController:self];
+    NSLayoutYAxisAnchor *topAnchor = self.topLayoutGuide.bottomAnchor;
+    NSLayoutYAxisAnchor *bottomAnchor = self.bottomLayoutGuide.topAnchor;
 
     [NSLayoutConstraint activateConstraints:@[
-        [self.segmentControl.topAnchor constraintEqualToAnchor:self.topLayoutGuide.bottomAnchor constant:12.0],
+        [self.segmentControl.topAnchor constraintEqualToAnchor:topAnchor constant:12.0],
         [self.segmentControl.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
         [self.segmentControl.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
 
         [self.scrollView.topAnchor constraintEqualToAnchor:self.segmentControl.bottomAnchor constant:12.0],
         [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.scrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [self.scrollView.bottomAnchor constraintEqualToAnchor:self.bottomLayoutGuide.topAnchor],
+        [self.scrollView.bottomAnchor constraintEqualToAnchor:bottomAnchor],
 
         [self.contentStack.topAnchor constraintEqualToAnchor:self.scrollView.topAnchor constant:16.0],
         [self.contentStack.leadingAnchor constraintEqualToAnchor:self.scrollView.leadingAnchor constant:16.0],
@@ -128,6 +114,28 @@
 
     [self buildInferencePane];
     [self buildRPCPane];
+
+    self.logsContainer = [[UIView alloc] init];
+    self.logsContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    self.logsContainer.hidden = YES;
+    [self.view addSubview:self.logsContainer];
+
+    self.logsViewController = [[RMLogsViewController alloc] init];
+    [self addChildViewController:self.logsViewController];
+    self.logsViewController.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.logsContainer addSubview:self.logsViewController.view];
+    [self.logsViewController didMoveToParentViewController:self];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.logsContainer.topAnchor constraintEqualToAnchor:self.segmentControl.bottomAnchor constant:12.0],
+        [self.logsContainer.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.logsContainer.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.logsContainer.bottomAnchor constraintEqualToAnchor:bottomAnchor],
+        [self.logsViewController.view.topAnchor constraintEqualToAnchor:self.logsContainer.topAnchor],
+        [self.logsViewController.view.leadingAnchor constraintEqualToAnchor:self.logsContainer.leadingAnchor],
+        [self.logsViewController.view.trailingAnchor constraintEqualToAnchor:self.logsContainer.trailingAnchor],
+        [self.logsViewController.view.bottomAnchor constraintEqualToAnchor:self.logsContainer.bottomAnchor],
+    ]];
 }
 
 - (UIStackView *)verticalStack {
@@ -260,38 +268,40 @@
 }
 
 - (void)buildRPCPane {
-    self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
     self.nicknameField = [self textFieldWithPlaceholder:@"e.g. John's iPhone"];
-    self.serverHostField = [self textFieldWithPlaceholder:@"Server host"];
+    self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
+    self.serverHostField = [self textFieldWithPlaceholder:@"Server IP or host"];
     self.serverPortField = [self textFieldWithPlaceholder:nil];
     self.serverPortField.keyboardType = UIKeyboardTypeNumberPad;
     self.threadCountField = [self numericField];
 
     [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Node Name (Optional)" field:self.nicknameField]];
-    [self.rpcPane addArrangedSubview:self.connectionStringField];
 
-    UIButton *applyConnectionButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [applyConnectionButton setTitle:@"Apply connection string" forState:UIControlStateNormal];
-    [applyConnectionButton addTarget:self action:@selector(applyConnectionStringTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.rpcPane addArrangedSubview:applyConnectionButton];
-
-    [self.rpcPane addArrangedSubview:self.serverHostField];
-    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Coordinator port" field:self.serverPortField]];
+    UILabel *connectionTitle = [[UILabel alloc] init];
+    connectionTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    connectionTitle.text = @"Connection";
+    [self.rpcPane addArrangedSubview:connectionTitle];
 
     UIButton *scanQRButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [scanQRButton setTitle:@"Scan QR code" forState:UIControlStateNormal];
     [scanQRButton addTarget:self action:@selector(scanQRTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.rpcPane addArrangedSubview:scanQRButton];
 
-    UIButton *clipboardButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [clipboardButton setTitle:@"Import from clipboard" forState:UIControlStateNormal];
-    [clipboardButton addTarget:self action:@selector(importFromClipboardTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.rpcPane addArrangedSubview:clipboardButton];
+    [self.rpcPane addArrangedSubview:self.connectionStringField];
 
     self.importStatusLabel = [[UILabel alloc] init];
     self.importStatusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
     self.importStatusLabel.numberOfLines = 0;
+    self.importStatusLabel.textColor = [UIColor grayColor];
     [self.rpcPane addArrangedSubview:self.importStatusLabel];
+
+    UILabel *coordinatorTitle = [[UILabel alloc] init];
+    coordinatorTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    coordinatorTitle.text = @"Coordinator";
+    [self.rpcPane addArrangedSubview:coordinatorTitle];
+
+    [self.rpcPane addArrangedSubview:self.serverHostField];
+    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Server port" field:self.serverPortField]];
 
     self.threadCountStepper = [[UIStepper alloc] init];
     [self.threadCountStepper addTarget:self action:@selector(threadStepperChanged:) forControlEvents:UIControlEventValueChanged];
@@ -300,7 +310,8 @@
     UILabel *footer = [[UILabel alloc] init];
     footer.numberOfLines = 0;
     footer.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
-    footer.text = @"Paste a rmcluster://connect URL, scan a QR code, or manually edit the coordinator host and port.";
+    footer.textColor = [UIColor grayColor];
+    footer.text = @"Paste a rmcluster://connect URL, scan a QR code, or type the coordinator server IP, port, and token below.";
     [self.rpcPane addArrangedSubview:footer];
 
     self.rpcStatusLabel = [[UILabel alloc] init];
@@ -465,23 +476,23 @@
             self.rpcStartStopButton.enabled = NO;
             break;
         case RMRPCServerStateRunning:
-            [self.rpcStartStopButton setTitle:@"Stop node" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Disconnect" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
         case RMRPCServerStateRecovering:
             [self.rpcStartStopButton setTitle:@"Recovering…" forState:UIControlStateNormal];
-            self.rpcStartStopButton.enabled = YES;
+            self.rpcStartStopButton.enabled = NO;
             break;
         case RMRPCServerStateDegraded:
-            [self.rpcStartStopButton setTitle:@"Stop node" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Connect to cluster" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
         case RMRPCServerStateUnavailable:
-            [self.rpcStartStopButton setTitle:@"Start node" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Connect to cluster" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
         default:
-            [self.rpcStartStopButton setTitle:@"Start node" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Connect to cluster" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
     }
@@ -493,9 +504,13 @@
 }
 
 - (void)segmentChanged:(UISegmentedControl *)sender {
-    self.inferencePane.hidden = sender.selectedSegmentIndex != 0;
-    self.rpcPane.hidden = sender.selectedSegmentIndex != 1;
-    self.logsPane.hidden = sender.selectedSegmentIndex != 2;
+    BOOL showingInference = sender.selectedSegmentIndex == 0;
+    BOOL showingRPC = sender.selectedSegmentIndex == 1;
+    BOOL showingLogs = sender.selectedSegmentIndex == 2;
+    self.inferencePane.hidden = !showingInference;
+    self.rpcPane.hidden = !showingRPC;
+    self.scrollView.hidden = showingLogs;
+    self.logsContainer.hidden = !showingLogs;
 }
 
 - (void)localModelTapped:(UIButton *)sender {
