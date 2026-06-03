@@ -159,6 +159,8 @@ typedef void (^LlamaShardCallback)(NSData *hiddenState,
                totalMB:(NSUInteger)totalMB
                threads:(NSUInteger)threads;
 
+- (void)stopRPCServer:(NSString *)endpoint;
+
 // ─ Distributed inference stubs ───────────────────────────────────────────────
 //
 // Pipeline-parallel execution splits the model into contiguous layer ranges.

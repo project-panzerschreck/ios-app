@@ -3,6 +3,7 @@
 #import "RMChatMessage.h"
 #import "RMConnectionBootstrapPayload.h"
 #import "RMInferenceService.h"
+#import "RMLogsViewController.h"
 #import "RMQRScannerViewController.h"
 #import "RMRpcSettings.h"
 #import <objc/runtime.h>
@@ -16,6 +17,8 @@
 @property (nonatomic, strong) UIStackView *contentStack;
 @property (nonatomic, strong) UIStackView *inferencePane;
 @property (nonatomic, strong) UIStackView *rpcPane;
+@property (nonatomic, strong) UIView *logsPane;
+@property (nonatomic, strong) RMLogsViewController *logsViewController;
 
 @property (nonatomic, strong) UIStackView *modelButtonsStack;
 @property (nonatomic, strong) UILabel *modelStatusLabel;
@@ -69,7 +72,7 @@
 }
 
 - (void)buildUI {
-    self.segmentControl = [[UISegmentedControl alloc] initWithItems:@[ @"Inference", @"GGML RPC Worker" ]];
+    self.segmentControl = [[UISegmentedControl alloc] initWithItems:@[ @"Inference", @"RMCluster Node", @"Logs" ]];
     self.segmentControl.selectedSegmentIndex = 0;
     [self.segmentControl addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
     self.segmentControl.translatesAutoresizingMaskIntoConstraints = NO;
@@ -87,9 +90,26 @@
 
     self.inferencePane = [self verticalStack];
     self.rpcPane = [self verticalStack];
+    self.logsPane = [[UIView alloc] init];
+    self.logsPane.translatesAutoresizingMaskIntoConstraints = NO;
     [self.contentStack addArrangedSubview:self.inferencePane];
     [self.contentStack addArrangedSubview:self.rpcPane];
+    [self.contentStack addArrangedSubview:self.logsPane];
     self.rpcPane.hidden = YES;
+    self.logsPane.hidden = YES;
+
+    self.logsViewController = [[RMLogsViewController alloc] init];
+    [self addChildViewController:self.logsViewController];
+    self.logsViewController.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.logsPane addSubview:self.logsViewController.view];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.logsViewController.view.topAnchor constraintEqualToAnchor:self.logsPane.topAnchor],
+        [self.logsViewController.view.leadingAnchor constraintEqualToAnchor:self.logsPane.leadingAnchor],
+        [self.logsViewController.view.trailingAnchor constraintEqualToAnchor:self.logsPane.trailingAnchor],
+        [self.logsViewController.view.bottomAnchor constraintEqualToAnchor:self.logsPane.bottomAnchor],
+        [self.logsPane.heightAnchor constraintGreaterThanOrEqualToConstant:400.0],
+    ]];
+    [self.logsViewController didMoveToParentViewController:self];
 
     [NSLayoutConstraint activateConstraints:@[
         [self.segmentControl.topAnchor constraintEqualToAnchor:self.topLayoutGuide.bottomAnchor constant:12.0],
@@ -258,12 +278,12 @@
     [self.rpcPane addArrangedSubview:self.endpointsTextView];
 
     self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
-    self.nicknameField = [self textFieldWithPlaceholder:@"Optional phone nickname"];
+    self.nicknameField = [self textFieldWithPlaceholder:@"e.g. John's iPhone"];
     self.serverHostField = [self textFieldWithPlaceholder:@"Server host"];
     self.serverPortField = [self numericField];
     self.threadCountField = [self numericField];
 
-    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Nickname" field:self.nicknameField]];
+    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Node Name (Optional)" field:self.nicknameField]];
     [self.rpcPane addArrangedSubview:self.connectionStringField];
 
     UIButton *applyConnectionButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -463,18 +483,27 @@
             self.rpcStartStopButton.enabled = NO;
             break;
         case RMRPCServerStateRunning:
-            [self.rpcStartStopButton setTitle:@"Stop RPC server" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Stop node" forState:UIControlStateNormal];
+            self.rpcStartStopButton.enabled = YES;
+            break;
+        case RMRPCServerStateRecovering:
+            [self.rpcStartStopButton setTitle:@"Recovering…" forState:UIControlStateNormal];
+            self.rpcStartStopButton.enabled = YES;
+            break;
+        case RMRPCServerStateDegraded:
+            [self.rpcStartStopButton setTitle:@"Stop node" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
         case RMRPCServerStateUnavailable:
-            [self.rpcStartStopButton setTitle:@"Start RPC server" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Start node" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
         default:
-            [self.rpcStartStopButton setTitle:@"Start RPC server" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Start node" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
     }
+    self.nicknameField.enabled = self.service.rpcServerState == RMRPCServerStateIdle || self.service.rpcServerState == RMRPCServerStateUnavailable;
 }
 
 - (void)updateEndpointsText {
@@ -499,9 +528,9 @@
 }
 
 - (void)segmentChanged:(UISegmentedControl *)sender {
-    BOOL showingInference = sender.selectedSegmentIndex == 0;
-    self.inferencePane.hidden = !showingInference;
-    self.rpcPane.hidden = showingInference;
+    self.inferencePane.hidden = sender.selectedSegmentIndex != 0;
+    self.rpcPane.hidden = sender.selectedSegmentIndex != 1;
+    self.logsPane.hidden = sender.selectedSegmentIndex != 2;
 }
 
 - (void)localModelTapped:(UIButton *)sender {
@@ -574,7 +603,7 @@
 
 - (void)rpcStartStopTapped:(id)sender {
     [self syncSettingsFromFields];
-    if (self.service.rpcServerState == RMRPCServerStateRunning || self.service.rpcServerState == RMRPCServerStateStarting) {
+    if (self.service.rpcServerState != RMRPCServerStateIdle && self.service.rpcServerState != RMRPCServerStateUnavailable) {
         [self.service stopRPCServer];
     } else {
         [self.service startRPCServerWithCoordinatorHost:self.settings.clusterServerHost

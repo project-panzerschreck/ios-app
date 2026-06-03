@@ -45,9 +45,12 @@ IPA_NAME := $(APPLICATION_NAME)_$(PACKAGE_VERSION)_unsigned.ipa
 rmclusternode_FILES = \
 	distributed-ml-ggml-client-ios/main.m \
 	distributed-ml-ggml-client-ios/AppDelegate.m \
+	distributed-ml-ggml-client-ios/Diagnostics/AppDiagnostics.m \
+	distributed-ml-ggml-client-ios/RMAppLogger.m \
 	distributed-ml-ggml-client-ios/RMChatMessage.m \
 	distributed-ml-ggml-client-ios/RMConnectionBootstrapPayload.m \
 	distributed-ml-ggml-client-ios/RMInferenceService.m \
+	distributed-ml-ggml-client-ios/RMLogsViewController.m \
 	distributed-ml-ggml-client-ios/RMQRScannerViewController.m \
 	distributed-ml-ggml-client-ios/RMRootViewController.m \
 	distributed-ml-ggml-client-ios/RMRpcSettings.m \
@@ -62,6 +65,8 @@ rmclusternode_CFLAGS = \
 	-fno-modules \
 	-fmodules-cache-path=$(MODULE_CACHE_DIR) \
 	-isystem $(LEGACY_TOOLCHAIN_LIBCXX) \
+	-DGGML_RPC_NO_STOP_SERVER=1 \
+	-Idistributed-ml-ggml-client-ios \
 	-I$(ARMV7_VENDOR_DIR)/include \
 	-I$(ARMV7_VENDOR_DIR)/ggml/include
 rmclusternode_CCFLAGS = \
@@ -69,6 +74,8 @@ rmclusternode_CCFLAGS = \
 	-fno-modules \
 	-fmodules-cache-path=$(MODULE_CACHE_DIR) \
 	-isystem $(LEGACY_TOOLCHAIN_LIBCXX) \
+	-DGGML_RPC_NO_STOP_SERVER=1 \
+	-Idistributed-ml-ggml-client-ios \
 	-I$(ARMV7_VENDOR_DIR)/include \
 	-I$(ARMV7_VENDOR_DIR)/ggml/include
 rmclusternode_LDFLAGS += \

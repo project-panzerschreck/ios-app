@@ -617,6 +617,19 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 #endif
 }
 
+- (void)stopRPCServer:(NSString *)endpoint {
+#if !GGML_RPC_AVAILABLE
+    NSLog(@"[LlamaBridge] RPC stop requested but GGML RPC is unavailable.");
+    return;
+#elif defined(GGML_RPC_NO_STOP_SERVER)
+    NSLog(@"[LlamaBridge] RPC stop is not supported by this ggml-rpc build for %@.", endpoint);
+#else
+    const char *ep = endpoint.UTF8String;
+    const bool stopped = ggml_backend_rpc_stop_server(ep);
+    NSLog(@"[LlamaBridge] RPC stop request for %@ %@", endpoint, stopped ? @"accepted" : @"ignored");
+#endif
+}
+
 // ── Distributed inference – FIRST SHARD ─────────────────────────────────────
 //
 // CURRENT BEHAVIOR (without patch):
