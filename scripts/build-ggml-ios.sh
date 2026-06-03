@@ -40,7 +40,7 @@ fi
 LLAMA_DIR="${LLAMA_DIR:-$DEFAULT_LLAMA_DIR}"
 BUILD_BASE="$PROJECT_DIR/build-llama"
 OUTPUT_DIR="$PROJECT_DIR/Frameworks"
-IOS_MIN="10.3"
+IOS_MIN="${IOS_MIN:-12.0}"
 
 # ── Pin a specific llama.cpp release ─────────────────────────────────────────
 # Update this tag to upgrade.  Find tags at https://github.com/ggml-org/llama.cpp/tags
