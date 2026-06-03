@@ -16,7 +16,7 @@ LEGACY_TOOLCHAIN_BIN ?= $(HOME)/ios-legacy-toolchain/bin
 LEGACY_TOOLCHAIN_LIBCXX ?= $(HOME)/ios-legacy-toolchain/include/c++/v1
 IOS10_SDK_ROOT ?= $(HOME)/theos/sdks/iPhoneOS10.3.sdk
 IOS10_SDK_LIB_DIR := $(IOS10_SDK_ROOT)/usr/lib
-IOS16_SDK_ROOT ?= $(HOME)/theos/sdks/iPhoneOS16.5.sdk
+IOS16_SDK_ROOT ?= $(shell xcrun --sdk iphoneos --show-sdk-path 2>/dev/null)
 
 THEOS ?= $(HOME)/theos
 ifeq ($(wildcard $(THEOS)/makefiles/common.mk),)

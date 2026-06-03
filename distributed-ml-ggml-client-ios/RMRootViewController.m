@@ -274,6 +274,17 @@
     self.threadCountField = [self numericField];
 
     [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Nickname" field:self.nicknameField]];
+
+    UIButton *scanQRButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [scanQRButton setTitle:@"Scan QR code" forState:UIControlStateNormal];
+    [scanQRButton addTarget:self action:@selector(scanQRTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.rpcPane addArrangedSubview:scanQRButton];
+
+    UIButton *clipboardButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [clipboardButton setTitle:@"Import from clipboard" forState:UIControlStateNormal];
+    [clipboardButton addTarget:self action:@selector(importFromClipboardTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.rpcPane addArrangedSubview:clipboardButton];
+
     [self.rpcPane addArrangedSubview:self.connectionStringField];
 
     UIButton *applyConnectionButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -285,16 +296,6 @@
     self.serverPortStepper = [[UIStepper alloc] init];
     [self.serverPortStepper addTarget:self action:@selector(serverPortStepperChanged:) forControlEvents:UIControlEventValueChanged];
     [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Coordinator port" field:self.serverPortField stepper:self.serverPortStepper]];
-
-    UIButton *scanQRButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [scanQRButton setTitle:@"Scan QR code" forState:UIControlStateNormal];
-    [scanQRButton addTarget:self action:@selector(scanQRTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.rpcPane addArrangedSubview:scanQRButton];
-
-    UIButton *clipboardButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [clipboardButton setTitle:@"Import from clipboard" forState:UIControlStateNormal];
-    [clipboardButton addTarget:self action:@selector(importFromClipboardTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.rpcPane addArrangedSubview:clipboardButton];
 
     self.importStatusLabel = [[UILabel alloc] init];
     self.importStatusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];

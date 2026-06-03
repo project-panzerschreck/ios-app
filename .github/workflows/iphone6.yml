@@ -1,0 +1,49 @@
+name: iphone6
+
+on:
+  push:
+    branches: [iphone6]
+  pull_request:
+    branches: [iphone6]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout llama.cpp-rpc
+        uses: actions/checkout@v4
+        with:
+          repository: rmcluster/llama.cpp-rpc
+          ref: iphone6-build
+          path: llama.cpp-rpc
+
+      - name: Install dependencies
+        run: brew install cmake ldid
+
+      - name: Install Theos
+        run: |
+          git clone --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+          curl -LO https://github.com/theos/sdks/archive/master.zip
+          unzip -q master.zip
+          mv sdks-master/iPhoneOS*.sdk "$HOME/theos/sdks/" || true
+
+      - name: Build XCFrameworks
+        env:
+          LLAMA_CPP_RPC_DIR: ${{ github.workspace }}/llama.cpp-rpc
+        run: |
+          IOS_MIN=12.0 bash scripts/build-ggml-ios.sh
+
+      - name: Build unsigned IPA
+        env:
+          THEOS: ${{ env.HOME }}/theos
+          IOS16_SDK_ROOT: $(xcrun --sdk iphoneos --show-sdk-path)
+        run: bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmclusternode-6-unsigned
+          path: packages/rmclusternode-6-unsigned.ipa
