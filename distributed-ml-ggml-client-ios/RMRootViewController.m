@@ -254,12 +254,10 @@
 - (void)buildRPCPane {
     UILabel *nodeNameTitle = [[UILabel alloc] init];
     nodeNameTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    nodeNameTitle.text = @"Node Name";
+    nodeNameTitle.text = @"Node Name (Optional)";
     [self.rpcPane addArrangedSubview:nodeNameTitle];
 
-    self.nicknameField = [self textFieldWithPlaceholder:@"Phone nickname"];
-    self.nicknameField.textAlignment = NSTextAlignmentCenter;
-    self.nicknameField.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    self.nicknameField = [self textFieldWithPlaceholder:@"e.g. John's iPhone"];
     [self.rpcPane addArrangedSubview:self.nicknameField];
 
     UILabel *endpointTitle = [[UILabel alloc] init];
