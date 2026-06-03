@@ -17,5 +17,7 @@ struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
             .environmentObject(InferenceEngine.shared)
+            .environmentObject(RpcSettings.shared)
+            .environmentObject(AppDiagnosticsModel.shared)
     }
 }

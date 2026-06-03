@@ -72,20 +72,27 @@ struct InferenceView: View {
             .navigationViewStyle(.stack)
             .tabItem { Label("RMCluster Node", systemImage: "network") }
             .tag(1)
+
+            LogsView()
+                .tabItem { Label("Logs", systemImage: "terminal") }
+                .tag(2)
         }
         .sheet(isPresented: $showQRScanner) {
             QRScannerSheet(
                 onCodeScanned: { code in
                     showQRScanner = false
+                    AppLogger.log(tag: "InferenceView", "QR code scanned successfully")
                     applyConnectionConfig(from: code)
                 },
                 onFailure: { message in
                     showQRScanner = false
                     importStatus = message
+                    AppLogger.log("WARN", tag: "InferenceView", "QR scanner failed: \(message)")
                 }
             )
         }
         .onOpenURL { incomingURL in
+            AppLogger.log(tag: "InferenceView", "Received deep link: \(incomingURL.absoluteString)")
             applyConnectionConfig(from: incomingURL.absoluteString)
         }
         .onAppear {
@@ -270,7 +277,7 @@ struct InferenceView: View {
         let isRunning = rpcIsRunning
         let interfaces = ShardNetwork.allLocalIPv4s
 
-        Section("Node Name (Optional)") {
+        Section(header: Text("Node Name (Optional)")) {
             TextField("e.g. John's iPhone", text: $settings.nickname)
                 .disabled(isRunning)
         }
@@ -343,21 +350,36 @@ struct InferenceView: View {
         }
 
         Section {
-            if case .unavailable(let msg) = engine.rpcServerState {
-                Label(msg, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundColor(.red)
-            } else if isRunning {
+            rpcActionContent(isRunning: isRunning)
+        }
+    }
+
+    @ViewBuilder
+    private func rpcActionContent(isRunning: Bool) -> some View {
+        switch engine.rpcServerState {
+        case .unavailable(let msg):
+            Label(msg.isEmpty ? "Unavailable" : msg, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundColor(.red)
+                .padding(.vertical, 4)
+        default:
+            if isRunning {
                 Button {
+                    AppLogger.log(tag: "InferenceView", "Disconnect tapped")
                     engine.stopRPCServer()
                 } label: {
-                    Label("Stop RPC server", systemImage: "stop.circle")
-                        .frame(maxWidth: .infinity)
+                    Label("Disconnect", systemImage: "stop.circle")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(Color.red)
                 }
-                .foregroundColor(.red)
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets())
             } else {
                 Button {
                     guard prepareCoordinatorSettingsForStart() else { return }
+                    AppLogger.log(tag: "InferenceView", "Start RPC server tapped")
                     engine.startRPCServer(
                         coordinatorHost: clusterServerHost,
                         coordinatorPort: clusterServerPort,
@@ -366,10 +388,23 @@ struct InferenceView: View {
                         deviceId: settings.deviceId
                     )
                 } label: {
-                    Text(engine.rpcServerState == .starting ? "Starting…" : "Start RPC server")
-                        .frame(maxWidth: .infinity)
+                    Text(engine.rpcServerState == .starting ? "Starting…" : "Connect to cluster")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(
+                            engine.rpcServerState == .starting || !canStartRPCServer
+                                ? Color.secondary
+                                : Color.white
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(
+                            engine.rpcServerState == .starting || !canStartRPCServer
+                                ? Color.gray.opacity(0.3)
+                                : Color.accentColor
+                        )
                 }
+                .buttonStyle(.plain)
                 .disabled(engine.rpcServerState == .starting || !canStartRPCServer)
+                .listRowInsets(EdgeInsets())
             }
         }
     }
@@ -379,6 +414,64 @@ struct InferenceView: View {
     private var rpcIsRunning: Bool {
         if case .running = engine.rpcServerState { return true }
         return false
+    }
+
+    private var rpcStatusText: String {
+        switch engine.rpcServerState {
+        case .idle:
+            return "Idle"
+        case .starting:
+            return "Starting"
+        case .running:
+            return "Running"
+        case .recovering:
+            return "Recovering"
+        case .degraded:
+            return "Paused"
+        case .unavailable:
+            return "Unavailable"
+        }
+    }
+
+    private var rpcStatusDetail: String {
+        switch engine.rpcServerState {
+        case .running(let endpoint):
+            return endpoint
+        case .recovering(let reason), .degraded(let reason), .unavailable(let reason):
+            return reason
+        case .idle, .starting:
+            return ""
+        }
+    }
+
+    private var rpcStatusIcon: String {
+        switch engine.rpcServerState {
+        case .idle:
+            return "circle.dashed"
+        case .starting:
+            return "hourglass"
+        case .running:
+            return "checkmark.circle.fill"
+        case .recovering:
+            return "arrow.triangle.2.circlepath.circle.fill"
+        case .degraded:
+            return "pause.circle.fill"
+        case .unavailable:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var rpcStatusColor: Color {
+        switch engine.rpcServerState {
+        case .running:
+            return .green
+        case .recovering, .starting:
+            return .orange
+        case .degraded, .idle:
+            return .secondary
+        case .unavailable:
+            return .red
+        }
     }
 
     private var canStartRPCServer: Bool {
@@ -395,6 +488,7 @@ struct InferenceView: View {
 
         if clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             importStatus = "Enter a coordinator server IP or paste a connection string."
+            AppLogger.log("WARN", tag: "InferenceView", importStatus)
             return false
         }
 
@@ -406,6 +500,7 @@ struct InferenceView: View {
     private func applyConnectionConfig(from rawValue: String) -> Bool {
         guard let parsed = ConnectionBootstrapPayload.parse(rawValue) else {
             importStatus = "Could not parse connection data."
+            AppLogger.log("WARN", tag: "InferenceView", "Could not parse connection data: \(rawValue)")
             return false
         }
 
@@ -419,6 +514,7 @@ struct InferenceView: View {
         }
         selectedTab = 1
         importStatus = ""
+        AppLogger.log(tag: "InferenceView", "Applied connection config for \(parsed.host):\(parsed.port ?? clusterServerPort)")
         return true
     }
 
@@ -571,6 +667,7 @@ struct InferenceView_Previews: PreviewProvider {
         InferenceView()
             .environmentObject(InferenceEngine.shared)
             .environmentObject(RpcSettings.shared)
+            .environmentObject(AppDiagnosticsModel.shared)
     }
 }
 

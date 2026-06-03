@@ -9,11 +9,24 @@ import SwiftUI
 
 @main
 struct distributed_ml_ggml_client_iosApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(InferenceEngine.shared)
                 .environmentObject(RpcSettings.shared)
+                .environmentObject(AppDiagnosticsModel.shared)
+                .onChange(of: scenePhase) { newPhase in
+                    switch newPhase {
+                    case .active:
+                        InferenceEngine.shared.handleAppDidBecomeActive()
+                    case .inactive, .background:
+                        InferenceEngine.shared.handleAppWillResignActive()
+                    @unknown default:
+                        break
+                    }
+                }
         }
     }
 }
