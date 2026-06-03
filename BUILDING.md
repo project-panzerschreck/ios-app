@@ -70,10 +70,21 @@ Instead it relies on the legacy rebuild output in:
 armv7-rebuild-ios10/
 ```
 
-Rebuild it with:
+Libraries are built from `rmcluster/llama.cpp-rpc` on branch **`iphone-5-build`**
+(sibling checkout recommended). That branch provides `ggml_backend_rpc_stop_server`
+and iOS 10-safe RPC sources. Older `armv7-rebuild-ios10/` trees built from upstream
+`b5076` do not include RPC stop.
+
+```text
+ios-app/
+llama.cpp-rpc/    # git@github.com:rmcluster/llama.cpp-rpc.git @ iphone-5-build
+```
+
+Rebuild with:
 
 ```sh
-bash scripts/build-ggml-ios10-armv7.sh
+cd ../llama.cpp-rpc && git fetch origin && git checkout iphone-5-build
+cd - && bash scripts/build-ggml-ios10-armv7.sh
 ```
 
 This script uses the legacy toolchain and iOS 10.3 SDK to populate:

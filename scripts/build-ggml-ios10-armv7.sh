@@ -24,6 +24,9 @@ SOURCE_ROOT="$OUTPUT_ROOT/src/llama.cpp-rpc-ios10"
 IOS_MIN="10.3"
 ARCHS=("armv7" "armv7s")
 LLAMA_TAG="b5076"
+LLAMA_RPC_GIT="${LLAMA_RPC_GIT:-git@github.com:rmcluster/llama.cpp-rpc.git}"
+LLAMA_RPC_GIT_HTTPS="${LLAMA_RPC_GIT_HTTPS:-https://github.com/rmcluster/llama.cpp-rpc.git}"
+LLAMA_BRANCH="${LLAMA_BRANCH:-iphone-5-build}"
 
 if [[ -d "$PROJECT_DIR/../llama.cpp-rpc/.git" ]]; then
     DEFAULT_LLAMA_DIR="$PROJECT_DIR/../llama.cpp-rpc"
@@ -85,15 +88,22 @@ fi
 [[ -d "$LIBCXX_INCLUDE_DIR" ]] || die "libc++ headers not found at: $LIBCXX_INCLUDE_DIR"
 
 if [[ ! -d "$LLAMA_DIR/.git" ]]; then
-    log "Cloning llama.cpp @ $LLAMA_TAG ..."
+    log "Cloning llama.cpp-rpc @ $LLAMA_BRANCH ..."
     mkdir -p "$(dirname "$LLAMA_DIR")"
-    git clone --depth 1 --branch "$LLAMA_TAG" \
-        https://github.com/ggml-org/llama.cpp.git "$LLAMA_DIR" \
-    || git clone --depth 1 \
-        https://github.com/ggml-org/llama.cpp.git "$LLAMA_DIR"
+    if ! git clone --depth 1 --branch "$LLAMA_BRANCH" "$LLAMA_RPC_GIT" "$LLAMA_DIR"; then
+        log "SSH clone failed; retrying via HTTPS"
+        git clone --depth 1 --branch "$LLAMA_BRANCH" "$LLAMA_RPC_GIT_HTTPS" "$LLAMA_DIR"
+    fi
 else
-    log "Using existing llama.cpp checkout at $LLAMA_DIR"
+    log "Using existing llama.cpp-rpc checkout at $LLAMA_DIR"
+    git -C "$LLAMA_DIR" fetch origin --prune
+    git -C "$LLAMA_DIR" checkout "$LLAMA_BRANCH"
+    git -C "$LLAMA_DIR" pull --ff-only origin "$LLAMA_BRANCH" || true
 fi
+
+git -C "$LLAMA_DIR" rev-parse --short HEAD >/dev/null 2>&1 \
+    || die "llama.cpp-rpc checkout at $LLAMA_DIR is not usable"
+log "llama.cpp-rpc source: $(git -C "$LLAMA_DIR" describe --tags --always --dirty 2>/dev/null || git -C "$LLAMA_DIR" rev-parse --short HEAD) @ $(git -C "$LLAMA_DIR" branch --show-current)"
 
 mkdir -p "$LIB_OUTPUT_DIR" "$BUILD_ROOT" "$VENDOR_OUTPUT_DIR"
 rm -rf "$VENDOR_OUTPUT_DIR/include" "$VENDOR_OUTPUT_DIR/ggml"
@@ -104,6 +114,9 @@ rm -rf "$SOURCE_ROOT"
 mkdir -p "$(dirname "$SOURCE_ROOT")"
 rsync -a --delete --exclude '.git' "$LLAMA_DIR/" "$SOURCE_ROOT/"
 
+RPC_SOURCE="$SOURCE_ROOT/ggml/src/ggml-rpc/ggml-rpc.cpp"
+if grep -q '#include <filesystem>' "$RPC_SOURCE" 2>/dev/null; then
+log "Applying legacy iOS 10 filesystem patches to ggml sources"
 python3 - <<'PY' "$SOURCE_ROOT/ggml/src/ggml-rpc/ggml-rpc.cpp"
 from pathlib import Path
 import sys
@@ -142,7 +155,28 @@ for old, new in replacements.items():
 
 path.write_text(source)
 PY
+else
+    log "Skipping legacy filesystem patches (fork branch already iOS 10 compatible)"
+    if ! grep -q 'ggml_backend_rpc_stop_server' "$SOURCE_ROOT/ggml/include/ggml-rpc.h" 2>/dev/null; then
+        die "Expected ggml_backend_rpc_stop_server in ggml-rpc.h; use rmcluster/llama.cpp-rpc @ iphone-5-build"
+    fi
+    python3 - <<'PY' "$RPC_SOURCE"
+from pathlib import Path
+import sys
 
+path = Path(sys.argv[1])
+source = path.read_text()
+old = "    std::atomic<bool> stop_requested = false;\n"
+new = "    std::atomic<bool> stop_requested;\n\n    rpc_server_runtime() : stop_requested(false) {}\n"
+if old in source:
+    source = source.replace(old, new, 1)
+    path.write_text(source)
+PY
+fi
+
+if grep -q '#include <filesystem>' "$SOURCE_ROOT/ggml/src/ggml-backend-reg.cpp" 2>/dev/null \
+    || grep -q 'namespace fs = std::filesystem' "$SOURCE_ROOT/ggml/src/ggml-backend-dl.h" 2>/dev/null; then
+log "Applying legacy iOS 10 backend-reg patches"
 python3 - <<'PY' \
     "$SOURCE_ROOT/ggml/src/ggml-backend-dl.h" \
     "$SOURCE_ROOT/ggml/src/ggml-backend-dl.cpp" \
@@ -220,9 +254,47 @@ void ggml_backend_load_all_from_path(const char * dir_path) {
 """
 reg_cpp.write_text(source)
 PY
+else
+    log "Skipping legacy backend-reg patches"
+fi
 
 cp -R "$SOURCE_ROOT/include" "$VENDOR_OUTPUT_DIR/"
 cp -R "$SOURCE_ROOT/ggml/include" "$VENDOR_OUTPUT_DIR/ggml/"
+
+rebuild_ggml_rpc_lib_only() {
+    log "Rebuilding libggml-rpc.a only (legacy clang direct compile)"
+    mkdir -p "$BUILD_ROOT"
+    local objects=()
+    for arch in "${ARCHS[@]}"; do
+        local obj="$BUILD_ROOT/ggml-rpc-$arch.o"
+        local target_triple="$arch-apple-ios$IOS_MIN"
+        local cxx_flags="-arch $arch -target $target_triple -miphoneos-version-min=$IOS_MIN -isysroot $IOS10_SDK_ROOT -isystem $LIBCXX_INCLUDE_DIR -std=gnu++14 -fno-modules"
+        log "Compiling ggml-rpc for $arch"
+        "$CXX_COMPILER" -c $cxx_flags \
+            -I"$SOURCE_ROOT/include" \
+            -I"$SOURCE_ROOT/ggml/include" \
+            -I"$SOURCE_ROOT/ggml/src" \
+            -DGGML_USE_CPU \
+            -O2 \
+            -o "$obj" \
+            "$SOURCE_ROOT/ggml/src/ggml-rpc/ggml-rpc.cpp"
+        objects+=("$obj")
+    done
+
+    local fat_obj="$BUILD_ROOT/ggml-rpc.o"
+    lipo -create "${objects[@]}" -output "$fat_obj"
+    rm -f "$LIB_OUTPUT_DIR/libggml-rpc.a"
+    "$AR_TOOL" -qc "$LIB_OUTPUT_DIR/libggml-rpc.a" "$fat_obj"
+    # Legacy ranlib can hang on fat archives; system ranlib is fine for index tables.
+    if [[ "${SKIP_RANLIB:-0}" != "1" ]]; then
+        if command -v /usr/bin/ranlib >/dev/null 2>&1; then
+            /usr/bin/ranlib "$LIB_OUTPUT_DIR/libggml-rpc.a" || true
+        else
+            "$RANLIB_TOOL" "$LIB_OUTPUT_DIR/libggml-rpc.a" || true
+        fi
+    fi
+    log "Updated $LIB_OUTPUT_DIR/libggml-rpc.a with ggml_backend_rpc_stop_server"
+}
 
 build_arch() {
     local arch="$1"
@@ -233,9 +305,18 @@ build_arch() {
 
     log "Configuring $arch against SDK: $IOS10_SDK_ROOT"
     rm -rf "$build_dir"
-    cmake -S "$SOURCE_ROOT" -B "$build_dir" \
+    mkdir -p "$build_dir"
+    local cmake_cache="$build_dir/initial-cache.cmake"
+    cat > "$cmake_cache" <<EOF
+set(CMAKE_C_COMPILER_WORKS TRUE CACHE INTERNAL "")
+set(CMAKE_CXX_COMPILER_WORKS TRUE CACHE INTERNAL "")
+set(CMAKE_C_ABI_COMPILED TRUE CACHE INTERNAL "")
+set(CMAKE_CXX_ABI_COMPILED TRUE CACHE INTERNAL "")
+EOF
+    cmake -S "$SOURCE_ROOT" -B "$build_dir" -C "$cmake_cache" \
         -G "Unix Makefiles" \
         -DCMAKE_SYSTEM_NAME=Darwin \
+        -DCMAKE_CROSSCOMPILING=TRUE \
         -DCMAKE_SYSTEM_PROCESSOR="$arch" \
         -DCMAKE_OSX_SYSROOT="$IOS10_SDK_ROOT" \
         -DCMAKE_OSX_ARCHITECTURES="$arch" \
@@ -272,9 +353,13 @@ find_static_lib() {
     find "$build_dir" -name "lib${libname}.a" | head -1
 }
 
-for arch in "${ARCHS[@]}"; do
-    build_arch "$arch"
-done
+if [[ "${RPC_ONLY_REBUILD:-0}" == "1" ]]; then
+    rebuild_ggml_rpc_lib_only
+else
+    for arch in "${ARCHS[@]}"; do
+        build_arch "$arch"
+    done
+fi
 
 merge_lib() {
     local libname="$1"
@@ -290,15 +375,19 @@ merge_lib() {
     lipo -create "${input_libs[@]}" -output "$LIB_OUTPUT_DIR/lib${libname}.a"
 }
 
-merge_lib "llama"
-merge_lib "ggml"
-merge_lib "ggml-base"
-merge_lib "ggml-cpu"
-merge_lib "ggml-blas"
-merge_lib "ggml-rpc"
+if [[ "${RPC_ONLY_REBUILD:-0}" != "1" ]]; then
+    merge_lib "llama"
+    merge_lib "ggml"
+    merge_lib "ggml-base"
+    merge_lib "ggml-cpu"
+    merge_lib "ggml-blas"
+    merge_lib "ggml-rpc"
+fi
 
 cat > "$OUTPUT_ROOT/manifest.txt" <<EOF
 llama_dir=$LLAMA_DIR
+llama_branch=$LLAMA_BRANCH
+llama_commit=$(git -C "$LLAMA_DIR" rev-parse HEAD)
 patched_source_root=$SOURCE_ROOT
 ios_sdk_root=$IOS10_SDK_ROOT
 ios_min=$IOS_MIN

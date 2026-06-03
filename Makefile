@@ -65,7 +65,6 @@ rmclusternode_CFLAGS = \
 	-fno-modules \
 	-fmodules-cache-path=$(MODULE_CACHE_DIR) \
 	-isystem $(LEGACY_TOOLCHAIN_LIBCXX) \
-	-DGGML_RPC_NO_STOP_SERVER=1 \
 	-Idistributed-ml-ggml-client-ios \
 	-I$(ARMV7_VENDOR_DIR)/include \
 	-I$(ARMV7_VENDOR_DIR)/ggml/include
@@ -74,7 +73,6 @@ rmclusternode_CCFLAGS = \
 	-fno-modules \
 	-fmodules-cache-path=$(MODULE_CACHE_DIR) \
 	-isystem $(LEGACY_TOOLCHAIN_LIBCXX) \
-	-DGGML_RPC_NO_STOP_SERVER=1 \
 	-Idistributed-ml-ggml-client-ios \
 	-I$(ARMV7_VENDOR_DIR)/include \
 	-I$(ARMV7_VENDOR_DIR)/ggml/include

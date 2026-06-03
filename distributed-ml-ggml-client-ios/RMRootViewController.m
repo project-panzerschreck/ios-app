@@ -34,13 +34,11 @@
 @property (nonatomic, strong) UILabel *temperatureValueLabel;
 @property (nonatomic, strong) UISlider *temperatureSlider;
 
-@property (nonatomic, strong) UITextView *endpointsTextView;
 @property (nonatomic, strong) UITextField *connectionStringField;
 @property (nonatomic, strong) UITextField *nicknameField;
 @property (nonatomic, strong) UITextField *serverHostField;
 @property (nonatomic, strong) UITextField *serverPortField;
 @property (nonatomic, strong) UITextField *threadCountField;
-@property (nonatomic, strong) UIStepper *serverPortStepper;
 @property (nonatomic, strong) UIStepper *threadCountStepper;
 @property (nonatomic, strong) UILabel *importStatusLabel;
 @property (nonatomic, strong) UIButton *rpcStartStopButton;
@@ -262,25 +260,11 @@
 }
 
 - (void)buildRPCPane {
-    UILabel *endpointTitle = [[UILabel alloc] init];
-    endpointTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    endpointTitle.text = @"Endpoints";
-    [self.rpcPane addArrangedSubview:endpointTitle];
-
-    self.endpointsTextView = [[UITextView alloc] init];
-    self.endpointsTextView.editable = NO;
-    self.endpointsTextView.scrollEnabled = NO;
-    self.endpointsTextView.layer.cornerRadius = 8.0;
-    self.endpointsTextView.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1.0];
-    self.endpointsTextView.font = [UIFont fontWithName:@"Menlo-Regular" size:13.0] ?: [UIFont systemFontOfSize:13.0];
-    self.endpointsTextView.textContainerInset = UIEdgeInsetsMake(12, 10, 12, 10);
-    [self.endpointsTextView.heightAnchor constraintGreaterThanOrEqualToConstant:120.0].active = YES;
-    [self.rpcPane addArrangedSubview:self.endpointsTextView];
-
     self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
     self.nicknameField = [self textFieldWithPlaceholder:@"e.g. John's iPhone"];
     self.serverHostField = [self textFieldWithPlaceholder:@"Server host"];
-    self.serverPortField = [self numericField];
+    self.serverPortField = [self textFieldWithPlaceholder:nil];
+    self.serverPortField.keyboardType = UIKeyboardTypeNumberPad;
     self.threadCountField = [self numericField];
 
     [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Node Name (Optional)" field:self.nicknameField]];
@@ -292,9 +276,7 @@
     [self.rpcPane addArrangedSubview:applyConnectionButton];
 
     [self.rpcPane addArrangedSubview:self.serverHostField];
-    self.serverPortStepper = [[UIStepper alloc] init];
-    [self.serverPortStepper addTarget:self action:@selector(serverPortStepperChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Coordinator port" field:self.serverPortField stepper:self.serverPortStepper]];
+    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Coordinator port" field:self.serverPortField]];
 
     UIButton *scanQRButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [scanQRButton setTitle:@"Scan QR code" forState:UIControlStateNormal];
@@ -351,9 +333,11 @@
     row.axis = UILayoutConstraintAxisHorizontal;
     row.spacing = 10.0;
     row.alignment = UIStackViewAlignmentCenter;
+    row.distribution = UIStackViewDistributionFillEqually;
     UILabel *label = [[UILabel alloc] init];
     label.text = title;
-    [field.widthAnchor constraintEqualToConstant:180.0].active = YES;
+    label.adjustsFontSizeToFitWidth = YES;
+    label.minimumScaleFactor = 0.8;
     [row addArrangedSubview:label];
     [row addArrangedSubview:field];
     return row;
@@ -379,7 +363,6 @@
     self.nicknameField.text = self.settings.nickname ?: @"";
     self.serverHostField.text = self.settings.clusterServerHost;
     self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.clusterServerPort];
-    self.serverPortStepper.value = self.settings.clusterServerPort;
     self.threadCountField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.threads];
     self.threadCountStepper.minimumValue = 1;
     self.threadCountStepper.maximumValue = 64;
@@ -475,7 +458,6 @@
         self.tokensPerSecondLabel.text = @"";
     }
 
-    [self updateEndpointsText];
     self.rpcStatusLabel.text = self.service.rpcStatusMessage ?: @"";
     switch (self.service.rpcServerState) {
         case RMRPCServerStateStarting:
@@ -504,23 +486,6 @@
             break;
     }
     self.nicknameField.enabled = self.service.rpcServerState == RMRPCServerStateIdle || self.service.rpcServerState == RMRPCServerStateUnavailable;
-}
-
-- (void)updateEndpointsText {
-    NSArray<RMLocalInterface *> *interfaces = [RMInferenceService allLocalIPv4Interfaces];
-    if (interfaces.count == 0) {
-        self.endpointsTextView.text = @"No network interfaces found";
-        return;
-    }
-
-    NSMutableArray<NSString *> *lines = [NSMutableArray array];
-    for (RMLocalInterface *interface in interfaces) {
-        [lines addObject:[NSString stringWithFormat:@"RPC %@:%ld", interface.ip, (long)[RMRpcSettings listenPort]]];
-        [lines addObject:[NSString stringWithFormat:@"Storage %@:%ld", interface.ip, (long)[RMRpcSettings storagePort]]];
-        [lines addObject:interface.label ?: @""];
-        [lines addObject:@""];
-    }
-    self.endpointsTextView.text = [lines componentsJoinedByString:@"\n"];
 }
 
 - (void)updateTemperatureLabel {
@@ -635,7 +600,6 @@
     if (payload.port != nil) {
         self.settings.clusterServerPort = payload.port.integerValue;
         self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.clusterServerPort];
-        self.serverPortStepper.value = self.settings.clusterServerPort;
     }
 
     if (payload.device.length > 0) {
@@ -646,10 +610,6 @@
     self.segmentControl.selectedSegmentIndex = 1;
     [self segmentChanged:self.segmentControl];
     self.importStatusLabel.text = @"";
-}
-
-- (void)serverPortStepperChanged:(UIStepper *)sender {
-    self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)sender.value];
 }
 
 - (void)threadStepperChanged:(UIStepper *)sender {

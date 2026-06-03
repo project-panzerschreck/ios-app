@@ -584,13 +584,9 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         }];
         [self publishRuntimeHealthWithStatusOverride:@"recovering"];
         if (!rpcWithinGrace) {
-#if defined(GGML_RPC_NO_STOP_SERVER)
-            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.rpc_unhealthy action=manual_restart_required announce=skipped"];
-#else
             [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.rpc_unhealthy action=restart_rpc announce=skipped"];
             [self stopRPCWorkerWithReason:self.lastRuntimeError];
             [self startRPCWorker];
-#endif
         }
         return 2.0;
     }
