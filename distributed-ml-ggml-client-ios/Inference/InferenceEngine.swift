@@ -41,6 +41,8 @@ enum RPCServerState: Equatable {
     case idle
     case starting
     case running(endpoint: String)
+    case recovering(reason: String)
+    case degraded(reason: String)
     case unavailable(String)
 }
 
@@ -69,9 +71,39 @@ final class InferenceEngine: ObservableObject {
     nonisolated(unsafe) private let bridge = LlamaBridge()
     private var generationTask: Task<Void, Never>?
     private var rpcServerTask:  Task<Void, Never>?
-    private var discoveryTask:  Task<Void, Never>?
+    private var supervisorTask: Task<Void, Never>?
     private var pendingRPCEndpoint: String?
     private var storageServer: StorageServer?
+
+    private struct NodeRuntimeConfig: Equatable {
+        let coordinatorHost: String
+        let coordinatorPort: Int
+        let nickname: String
+        let threads: Int
+        let deviceId: String
+    }
+
+    private let generalLogTag = "GENERAL"
+    private let rpcServerLogTag = "RPC SERVER"
+    private let storageLogTag = "STORAGE"
+    private let healthCheckTimeout: TimeInterval = 1.5
+    private let recoveryBackoffNs: UInt64 = 2_000_000_000
+    private let startupGraceInterval: TimeInterval = 2.0
+    private let defaultAnnounceInterval: Double = 10.0
+
+    private var desiredNodeConfig: NodeRuntimeConfig?
+    private var nodeShouldBeRunning = false
+    private var appIsActive = true
+    private var runtimeIsShuttingDown = false
+    private var discoveryActive = false
+    private var announceEligible = false
+    private var rpcHealthy = false
+    private var storageHealthy = false
+    private var currentRPCEndpoint = ""
+    private var currentStorageEndpoint = ""
+    private var lastRuntimeError = ""
+    private var lastRPCStartAt: Date?
+    private var lastStorageStartAt: Date?
 
     static let shared = InferenceEngine()
 
@@ -247,123 +279,34 @@ final class InferenceEngine: ObservableObject {
         nickname: String,
         threads: Int,
         deviceId: String
-        ) {
+    ) {
+        let config = NodeRuntimeConfig(
+            coordinatorHost: coordinatorHost.trimmingCharacters(in: .whitespacesAndNewlines),
+            coordinatorPort: coordinatorPort,
+            nickname: nickname,
+            threads: threads,
+            deviceId: deviceId
+        )
 
-        guard case .idle = rpcServerState else { return }
-        rpcServerState = .starting
-
-        let host = RpcSettings.listenHost
-        let port = RpcSettings.listenPort
-        let storagePort = RpcSettings.storagePort
-
-        let storageDir = RpcSettings.shared.storageDirectory
-        let storageServer = StorageServer(storageDir: storageDir)
-        if storageServer.start(port: storagePort) {
-            self.storageServer = storageServer
-        } else {
-            rpcServerState = .unavailable("Storage server failed to start on port \(storagePort)")
+        guard !config.coordinatorHost.isEmpty else {
+            AppLogger.log("WARN", tag: generalLogTag, "node.start.rejected reason=missing_coordinator_host")
             return
         }
 
-        rpcServerTask = Task.detached(priority: .userInitiated) { [bridge] in
-            if !LlamaBridge.rpcAvailable() {
-                await MainActor.run {
-                    self.rpcServerState = .unavailable(
-                        "ggml-rpc not compiled in. Run scripts/build-ggml-ios.sh then add ggml-rpc.xcframework to the Xcode target.")
-                }
-                return
-            }
+        desiredNodeConfig = config
+        nodeShouldBeRunning = true
+        runtimeIsShuttingDown = false
+        lastRuntimeError = ""
+        rpcServerState = .starting
+        AppLogger.log(tag: generalLogTag, "node.start.requested coordinator=\(config.coordinatorHost):\(config.coordinatorPort)")
+        applyKeepAwakePolicy()
+        publishRuntimeHealth(statusOverride: "starting")
 
-            let (freeMB, totalMB) = Self.deviceMemoryMB()
-            let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.path
-
-            // Some iOS simulator/device restarts keep the previous socket alive
-            // briefly after stop. Retry on successive ports until one stays up.
-            let startupProbeWindow: UInt64 = 750_000_000
-            let maxPortAttempts = 16
-
-            for offset in 0..<maxPortAttempts {
-                if Task.isCancelled { break }
-
-                let candidatePort = port + offset
-                let endpoint = "\(host):\(candidatePort)"
-
-                await MainActor.run {
-                    self.rpcServerState = .starting
-#if canImport(UIKit)
-                    UIApplication.shared.isIdleTimerDisabled = true
-#endif
-                }
-
-                let discoveryTask = Task.detached(priority: .utility) { [weak self] in
-                    try? await Task.sleep(nanoseconds: startupProbeWindow)
-                    guard !Task.isCancelled else { return }
-                    guard let self else { return }
-                    await MainActor.run {
-#if canImport(UIKit)
-                        UIApplication.shared.isIdleTimerDisabled = true
-#endif
-                        // Port is confirmed bound — record the endpoint and start
-                        // announcing. .running is set only when the coordinator
-                        // responds to the first announce, confirming connectivity.
-                        self.pendingRPCEndpoint = endpoint
-                        self.startDiscoveryPing(
-                            coordinatorHost: coordinatorHost,
-                            coordinatorPort: coordinatorPort,
-                            servicePort: candidatePort,
-                            storagePort: storagePort,
-                            nickname: nickname,
-                            deviceId: deviceId
-                        )
-                    }
-                }
-
-                let startedAt = Date()
-                // Blocking call – returns only when the server socket is closed,
-                // or immediately if the port cannot be bound.
-                bridge.startRPCServer(
-                    endpoint,
-                    cacheDir: cacheDir,
-                    freeMB: freeMB,
-                    totalMB: totalMB,
-                    threads: UInt(threads)
-                )
-                let elapsed = Date().timeIntervalSince(startedAt)
-
-                discoveryTask.cancel()
-                await MainActor.run {
-                    self.stopDiscoveryPing()
-                }
-
-                await MainActor.run {
-                    self.pendingRPCEndpoint = nil
-                    self.rpcServerState = .idle
-#if canImport(UIKit)
-                    UIApplication.shared.isIdleTimerDisabled = false
-#endif
-                }
-
-                if Task.isCancelled { break }
-
-                // If the server ran for a short while, assume this attempt was
-                // successful and exit. Immediate returns are usually bind failures.
-                if elapsed >= 0.5 {
-                    return
-                }
-
-                // Otherwise keep probing the next port.
-            }
-
-            await MainActor.run {
-                self.pendingRPCEndpoint = nil
-                self.storageServer?.stop()
-                self.storageServer = nil
-                self.stopDiscoveryPing()
-                self.rpcServerState = .idle
-#if canImport(UIKit)
-                UIApplication.shared.isIdleTimerDisabled = false
-#endif
-            }
+        if appIsActive {
+            startNodeSupervisorIfNeeded()
+        } else {
+            rpcServerState = .degraded(reason: "Waiting for app to become active")
+            publishRuntimeHealth(statusOverride: "degraded")
         }
     }
 
@@ -382,103 +325,384 @@ final class InferenceEngine: ObservableObject {
     /// Note: this cancels the Swift Task; the underlying C server loop will be
     /// interrupted when the OS reclaims the socket on thread teardown.
     func stopRPCServer() {
-        rpcServerTask?.cancel()
-        rpcServerTask = nil
-        pendingRPCEndpoint = nil
-        stopDiscoveryPing()
-        storageServer?.stop()
-        storageServer = nil
-        rpcServerState = .idle
+        AppLogger.log(tag: generalLogTag, "node.stop.requested reason=user")
+        stopNodeRuntime(preserveDesiredConfig: false, reason: "Stopped by user")
     }
-    
-    // ── UDP Discovery Ping ────────────────────────────────────────────────────
-    private func startDiscoveryPing(
-        coordinatorHost: String,
-        coordinatorPort: Int,
-        servicePort: Int,
-        storagePort: Int,
-        nickname: String,
-        deviceId: String
-    ) {
-        stopDiscoveryPing()
-        let host = coordinatorHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty else { return }
 
-        discoveryTask = Task.detached {
-            // Enable battery monitoring for the lifetime of this task.
-            #if canImport(UIKit)
-            await MainActor.run { UIDevice.current.isBatteryMonitoringEnabled = true }
-            #endif
+    func handleAppDidBecomeActive() {
+        appIsActive = true
+        AppLogger.log(tag: generalLogTag, "app.active")
+        applyKeepAwakePolicy()
+        if nodeShouldBeRunning {
+            if case .degraded(_) = rpcServerState {
+                rpcServerState = .starting
+            }
+            startNodeSupervisorIfNeeded()
+        } else {
+            publishRuntimeHealth(statusOverride: "idle")
+        }
+    }
 
+    func handleAppWillResignActive() {
+        appIsActive = false
+        AppLogger.log(tag: generalLogTag, "app.inactive stopping_runtime=true")
+        if nodeShouldBeRunning {
+            stopNodeRuntime(preserveDesiredConfig: true, reason: "App moved to background")
+        } else {
+            applyKeepAwakePolicy()
+            publishRuntimeHealth(statusOverride: "idle")
+        }
+    }
+
+    private func startNodeSupervisorIfNeeded() {
+        guard supervisorTask == nil, nodeShouldBeRunning, appIsActive else { return }
+        AppLogger.log(tag: generalLogTag, "supervisor.start")
+        supervisorTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
+                guard let self else { return }
+                let interval = await self.runNodeSupervisorIteration()
                 do {
-                    // Collect device info on each ping so values stay fresh.
-                    let hwModel   = Self.hardwareModel()
-                    let maxBytes  = LlamaBridge.availableProcessMemoryBytes()
-                    let localIp   = Self.primaryIPv4Address()
-                    #if canImport(UIKit)
-                    let battery   = await MainActor.run { UIDevice.current.batteryLevel }   // 0–1 or -1
-                    #else
-                    let battery: Float = -1
-                    #endif
-                    let tempCode  = await MainActor.run { ProcessInfo.processInfo.thermalState }
-                    let tempC     = Self.thermalStateTemperature(tempCode)
-
-                    var comps = URLComponents()
-                    comps.scheme = "http"
-                    comps.host   = host
-                    comps.port   = coordinatorPort
-                    comps.path   = "/announce"
-                    var items: [URLQueryItem] = [
-                        .init(name: "id",       value: deviceId),
-                        .init(name: "port",     value: "\(servicePort)"),
-                        .init(name: "storage_port", value: "\(storagePort)"),
-                        .init(name: "ip",       value: localIp),
-                        .init(name: "model",    value: hwModel),
-                        .init(name: "max_size", value: "\(maxBytes)"),
-                    ]
-                    if battery >= 0 {
-                        items.append(.init(name: "battery", value: String(format: "%.1f", battery * 100)))
-                    }
-                    if !tempC.isNaN {
-                        items.append(.init(name: "temperature", value: String(format: "%.1f", tempC)))
-                    }
-                    if !trimmedNickname.isEmpty {
-                        items.append(.init(name: "nickname", value: trimmedNickname))
-                    }
-                    comps.queryItems = items
-                    guard let url = comps.url else { return }
-
-                    var req = URLRequest(url: url)
-                    req.httpMethod  = "GET"
-                    req.timeoutInterval = 5
-
-                    let (data, response) = try await URLSession.shared.data(for: req)
-
-                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        let intervalSec = (json["interval"] as? NSNumber)?.doubleValue ?? 10
-                        // First successful announce confirms coordinator connectivity.
-                        if let endpoint = await MainActor.run(body: { self.pendingRPCEndpoint }) {
-                            await MainActor.run {
-                                self.pendingRPCEndpoint = nil
-                                self.rpcServerState = .running(endpoint: endpoint)
-                            }
-                        }
-                        try await Task.sleep(nanoseconds: UInt64(intervalSec * 1_000_000_000))
-                    } else {
-                        try await Task.sleep(nanoseconds: 1_000_000_000)
-                    }
+                    try await Task.sleep(nanoseconds: UInt64(max(interval, 0.5) * 1_000_000_000))
                 } catch {
-                    if error is CancellationError { break }
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    break
                 }
             }
+        }
+    }
 
+    private func stopNodeRuntime(preserveDesiredConfig: Bool, reason: String) {
+        runtimeIsShuttingDown = true
+        stopDiscoveryLoop()
+        stopStorageServer()
+        stopRPCWorker(reason: reason)
+        supervisorTask?.cancel()
+        supervisorTask = nil
+        rpcHealthy = false
+        storageHealthy = false
+        announceEligible = false
+        discoveryActive = false
+
+        if preserveDesiredConfig {
+            rpcServerState = .degraded(reason: reason)
+        } else {
+            nodeShouldBeRunning = false
+            desiredNodeConfig = nil
+            lastRuntimeError = ""
+            currentRPCEndpoint = ""
+            rpcServerState = .idle
+        }
+
+        applyKeepAwakePolicy()
+        publishRuntimeHealth(statusOverride: preserveDesiredConfig ? "degraded" : "idle")
+    }
+
+    private func startDiscoveryLoop() {
+        discoveryActive = true
+    }
+
+    private func stopDiscoveryLoop() {
+        discoveryActive = false
+    }
+
+    private func startStorageServer() -> Bool {
+        guard storageServer == nil else { return true }
+        let server = StorageServer(storageDir: RpcSettings.shared.storageDirectory)
+        let started = server.start(port: RpcSettings.storagePort)
+        if started {
+            storageServer = server
+            currentStorageEndpoint = "127.0.0.1:\(RpcSettings.storagePort)"
+            lastStorageStartAt = Date()
+            AppLogger.log(tag: storageLogTag, "storage.runtime.started endpoint=\(currentStorageEndpoint)")
+        } else {
+            lastRuntimeError = "Storage failed to bind port \(RpcSettings.storagePort)"
+            AppLogger.log("ERROR", tag: generalLogTag, "storage.runtime.start_failed port=\(RpcSettings.storagePort)")
+        }
+        return started
+    }
+
+    private func stopStorageServer() {
+        storageServer?.stop()
+        storageServer = nil
+        currentStorageEndpoint = ""
+    }
+
+    private func restartStorageServer() {
+        AppLogger.log(tag: generalLogTag, "storage.runtime.restart_requested")
+        stopStorageServer()
+        _ = startStorageServer()
+    }
+
+    private func startRPCWorker(_ config: NodeRuntimeConfig) {
+        guard rpcServerTask == nil else { return }
+        guard LlamaBridge.rpcAvailable() else {
+            let message = "ggml-rpc not compiled in. Run scripts/build-ggml-ios.sh then add ggml-rpc.xcframework to the Xcode target."
+            rpcServerState = .unavailable(message)
+            lastRuntimeError = message
+            nodeShouldBeRunning = false
+            desiredNodeConfig = nil
+            AppLogger.log("ERROR", tag: rpcServerLogTag, "rpc.unavailable reason=not_compiled")
+            publishRuntimeHealth(statusOverride: "unavailable")
+            return
+        }
+
+        runtimeIsShuttingDown = false
+        currentRPCEndpoint = "\(RpcSettings.listenHost):\(RpcSettings.listenPort)"
+        lastRPCStartAt = Date()
+        let endpoint = currentRPCEndpoint
+        let (freeMB, totalMB) = Self.deviceMemoryMB()
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.path
+        let threads = config.threads
+        rpcServerState = .starting
+        AppLogger.log(tag: rpcServerLogTag, "rpc.start.begin endpoint=\(endpoint) threads=\(threads) cache=\(cacheDir ?? "disabled") free_mb=\(freeMB) total_mb=\(totalMB)")
+        if let cacheDir, !cacheDir.isEmpty {
+            AppLogger.log(tag: rpcServerLogTag, "rpc.cache.enabled path=\(cacheDir)")
+        } else {
+            AppLogger.log("WARN", tag: rpcServerLogTag, "rpc.cache.disabled")
+        }
+
+        rpcServerTask = Task.detached(priority: .userInitiated) { [bridge] in
+            bridge.startRPCServer(
+                endpoint,
+                cacheDir: cacheDir,
+                freeMB: freeMB,
+                totalMB: totalMB,
+                threads: UInt(threads)
+            )
+
+            await MainActor.run {
+                self.handleRPCWorkerExit(endpoint: endpoint)
+            }
+        }
+    }
+
+    private func stopRPCWorker(reason: String) {
+        guard rpcServerTask != nil else { return }
+        AppLogger.log(tag: rpcServerLogTag, "rpc.stop.requested reason=\(reason)")
+        runtimeIsShuttingDown = true
+        if !currentRPCEndpoint.isEmpty {
+            bridge.stopRPCServer(currentRPCEndpoint)
+        }
+        rpcServerTask?.cancel()
+    }
+
+    private func restartRPCWorker(_ config: NodeRuntimeConfig, reason: String) {
+        if rpcServerTask != nil {
+            stopRPCWorker(reason: reason)
+        } else {
+            AppLogger.log(tag: rpcServerLogTag, "rpc.restart.requested")
+            startRPCWorker(config)
+        }
+    }
+
+    private func handleRPCWorkerExit(endpoint: String) {
+        let expected = runtimeIsShuttingDown || !nodeShouldBeRunning || !appIsActive
+        rpcServerTask = nil
+        rpcHealthy = false
+        announceEligible = false
+
+        if expected {
+            AppLogger.log(tag: rpcServerLogTag, "rpc.exit.expected endpoint=\(endpoint)")
+            if !nodeShouldBeRunning {
+                currentRPCEndpoint = ""
+                rpcServerState = .idle
+            }
+        } else {
+            lastRuntimeError = "RPC worker exited unexpectedly"
+            rpcServerState = .recovering(reason: lastRuntimeError)
+            AppLogger.log("ERROR", tag: rpcServerLogTag, "rpc.exit.unexpected endpoint=\(endpoint)")
+        }
+        publishRuntimeHealth(statusOverride: expected ? currentRuntimeStatusName() : "recovering")
+    }
+
+    private func isRPCHealthy() async -> Bool {
+        guard rpcServerTask != nil else { return false }
+        return await Self.probeTCP(host: "127.0.0.1", port: RpcSettings.listenPort, timeout: healthCheckTimeout)
+    }
+
+    private func isStorageHealthy() async -> Bool {
+        guard storageServer != nil else { return false }
+        guard let url = URL(string: "http://127.0.0.1:\(RpcSettings.storagePort)/storage_info") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = healthCheckTimeout
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            return httpResponse.statusCode == 200
+        } catch {
+            return false
+        }
+    }
+
+    private func runNodeSupervisorIteration() async -> Double {
+        guard nodeShouldBeRunning, appIsActive, let config = desiredNodeConfig else {
+            publishRuntimeHealth(statusOverride: currentRuntimeStatusName())
+            return defaultAnnounceInterval
+        }
+
+        applyKeepAwakePolicy()
+        let _ = startStorageServer()
+        if rpcServerTask == nil {
+            startRPCWorker(config)
+        }
+
+        let rpcProbe = await isRPCHealthy()
+        let storageProbe = await isStorageHealthy()
+        let rpcWithinGrace = lastRPCStartAt.map { Date().timeIntervalSince($0) < startupGraceInterval } ?? false
+        let storageWithinGrace = lastStorageStartAt.map { Date().timeIntervalSince($0) < startupGraceInterval } ?? false
+        let effectiveRPCHealthy = rpcProbe || (rpcServerTask != nil && rpcWithinGrace)
+        let effectiveStorageHealthy = storageProbe || (storageServer != nil && storageWithinGrace)
+
+        rpcHealthy = effectiveRPCHealthy
+        storageHealthy = effectiveStorageHealthy
+        announceEligible = rpcHealthy && storageHealthy
+        AppLogger.log("DEBUG", tag: generalLogTag, "health.check rpc_probe=\(rpcProbe) storage_probe=\(storageProbe) rpc_grace=\(rpcWithinGrace) storage_grace=\(storageWithinGrace) rpc_healthy=\(rpcHealthy) storage_healthy=\(storageHealthy) announce_eligible=\(announceEligible)")
+
+        if !storageHealthy {
+            stopDiscoveryLoop()
+            lastRuntimeError = "Storage server unhealthy"
+            rpcServerState = .recovering(reason: lastRuntimeError)
+            publishRuntimeHealth(statusOverride: "recovering")
+            if !storageWithinGrace {
+                AppLogger.log("WARN", tag: generalLogTag, "health.storage_unhealthy action=restart_storage announce=skipped")
+                restartStorageServer()
+            }
+            return Double(recoveryBackoffNs) / 1_000_000_000
+        }
+
+        if !rpcHealthy {
+            stopDiscoveryLoop()
+            lastRuntimeError = "RPC worker unhealthy"
+            rpcServerState = .recovering(reason: lastRuntimeError)
+            publishRuntimeHealth(statusOverride: "recovering")
+            if !rpcWithinGrace {
+                AppLogger.log("WARN", tag: generalLogTag, "health.rpc_unhealthy action=restart_rpc announce=skipped")
+                restartRPCWorker(config, reason: lastRuntimeError)
+            }
+            return Double(recoveryBackoffNs) / 1_000_000_000
+        }
+
+        rpcServerState = .running(endpoint: currentRPCEndpoint)
+        publishRuntimeHealth(statusOverride: "running")
+        return await announceToCoordinator(config)
+    }
+
+    private func announceToCoordinator(_ config: NodeRuntimeConfig) async -> Double {
+        startDiscoveryLoop()
+
+        do {
+            let hwModel = Self.hardwareModel()
+            let maxBytes = LlamaBridge.availableProcessMemoryBytes()
+            let localIP = Self.primaryIPv4Address()
             #if canImport(UIKit)
-            await MainActor.run { UIDevice.current.isBatteryMonitoringEnabled = false }
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            defer { UIDevice.current.isBatteryMonitoringEnabled = false }
+            let battery = UIDevice.current.batteryLevel
+            #else
+            let battery: Float = -1
             #endif
+            let tempC = Self.thermalStateTemperature(ProcessInfo.processInfo.thermalState)
+
+            var comps = URLComponents()
+            comps.scheme = "http"
+            comps.host = config.coordinatorHost
+            comps.port = config.coordinatorPort
+            comps.path = "/announce"
+            var items: [URLQueryItem] = [
+                .init(name: "id", value: config.deviceId),
+                .init(name: "port", value: "\(RpcSettings.listenPort)"),
+                .init(name: "storage_port", value: "\(RpcSettings.storagePort)"),
+                .init(name: "ip", value: localIP),
+                .init(name: "model", value: hwModel),
+                .init(name: "max_size", value: "\(maxBytes)")
+            ]
+            if battery >= 0 {
+                items.append(.init(name: "battery", value: String(format: "%.1f", battery * 100)))
+            }
+            if !tempC.isNaN {
+                items.append(.init(name: "temperature", value: String(format: "%.1f", tempC)))
+            }
+            let trimmedNickname = config.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedNickname.isEmpty {
+                items.append(.init(name: "nickname", value: trimmedNickname))
+            }
+            comps.queryItems = items
+
+            guard let url = comps.url else {
+                lastRuntimeError = "Failed to build announce URL"
+                AppLogger.log("ERROR", tag: generalLogTag, "announce.request.invalid_url")
+                publishRuntimeHealth(statusOverride: "running")
+                return 1
+            }
+
+            AppLogger.log("DEBUG", tag: generalLogTag, "announce.request url=\(url.absoluteString)")
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.timeoutInterval = 5
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                lastRuntimeError = "Coordinator announce failed"
+                AppLogger.log("WARN", tag: generalLogTag, "announce.failed status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                publishRuntimeHealth(statusOverride: "running")
+                return 1
+            }
+
+            lastRuntimeError = ""
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let intervalSec = (json?["interval"] as? NSNumber)?.doubleValue ?? defaultAnnounceInterval
+            AppLogger.log(tag: generalLogTag, "announce.ok interval_sec=\(intervalSec)")
+            publishRuntimeHealth(statusOverride: "running")
+            return intervalSec
+        } catch is CancellationError {
+            return defaultAnnounceInterval
+        } catch {
+            lastRuntimeError = "Coordinator announce error: \(error.localizedDescription)"
+            AppLogger.log("WARN", tag: generalLogTag, "announce.error error=\(error.localizedDescription)")
+            publishRuntimeHealth(statusOverride: "running")
+            return 1
+        }
+    }
+
+    private func applyKeepAwakePolicy() {
+        #if canImport(UIKit)
+        UIApplication.shared.isIdleTimerDisabled = nodeShouldBeRunning && appIsActive
+        #endif
+    }
+
+    private func publishRuntimeHealth(statusOverride: String? = nil) {
+        let coordinator = desiredNodeConfig.map { "\($0.coordinatorHost):\($0.coordinatorPort)" } ?? ""
+        let status = statusOverride ?? currentRuntimeStatusName()
+        AppLogger.log("DEBUG", tag: generalLogTag, "health.publish status=\(status) rpc=\(currentRPCEndpoint.isEmpty ? "none" : currentRPCEndpoint) storage=\(currentStorageEndpoint.isEmpty ? "none" : currentStorageEndpoint) coordinator=\(coordinator.isEmpty ? "none" : coordinator) rpc_healthy=\(rpcHealthy) storage_healthy=\(storageHealthy) announce_eligible=\(announceEligible) discovery_active=\(discoveryActive)")
+        AppLogger.rpcHealth(status: status, details: [
+            "endpoint": currentRPCEndpoint,
+            "storage_endpoint": currentStorageEndpoint,
+            "coordinator": coordinator,
+            "last_error": lastRuntimeError,
+            "rpc_available": rpcAvailable,
+            "metal_available": metalAvailable,
+            "discovery_active": discoveryActive,
+            "rpc_healthy": rpcHealthy,
+            "storage_healthy": storageHealthy,
+            "announce_eligible": announceEligible
+        ])
+    }
+
+    private func currentRuntimeStatusName() -> String {
+        switch rpcServerState {
+        case .idle:
+            return "idle"
+        case .starting:
+            return "starting"
+        case .running:
+            return "running"
+        case .recovering:
+            return "recovering"
+        case .degraded:
+            return "degraded"
+        case .unavailable:
+            return "unavailable"
         }
     }
 
@@ -492,10 +716,9 @@ final class InferenceEngine: ObservableObject {
     }
 
     private nonisolated static func primaryIPv4Address() -> String {
-        // Identify the primary interface name using the modern Network framework.
         let monitor = NWPathMonitor()
         let primaryInterfaceName = monitor.currentPath.availableInterfaces.first?.name
-        
+
         var ifAddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifAddr) == 0, let first = ifAddr else { return "0.0.0.0" }
         defer { freeifaddrs(first) }
@@ -504,9 +727,8 @@ final class InferenceEngine: ObservableObject {
             .compactMap { node -> String? in
                 let ifa = node.pointee
                 guard ifa.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { return nil }
-                
+
                 let name = String(cString: ifa.ifa_name)
-                // Prefer the OS-designated primary interface, otherwise ignore loopback.
                 if name == primaryInterfaceName || (primaryInterfaceName == nil && name != "lo0") {
                     var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                     getnameinfo(ifa.ifa_addr, socklen_t(ifa.ifa_addr.pointee.sa_len),
@@ -518,7 +740,6 @@ final class InferenceEngine: ObservableObject {
             .first ?? "0.0.0.0"
     }
 
-    // Maps ProcessInfo.ThermalState to an approximate temperature in °C.
     private nonisolated static func thermalStateTemperature(_ state: ProcessInfo.ThermalState) -> Double {
         switch state {
         case .nominal:  return 30.0
@@ -529,9 +750,37 @@ final class InferenceEngine: ObservableObject {
         }
     }
 
-    private func stopDiscoveryPing() {
-        discoveryTask?.cancel()
-        discoveryTask = nil
+    private nonisolated static func probeTCP(host: String, port: Int, timeout: TimeInterval) async -> Bool {
+        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return false }
+
+        return await withCheckedContinuation { continuation in
+            let queue = DispatchQueue(label: "InferenceEngine.probeTCP")
+            let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
+            var completed = false
+
+            @Sendable func finish(_ result: Bool) {
+                guard !completed else { return }
+                completed = true
+                connection.cancel()
+                continuation.resume(returning: result)
+            }
+
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    finish(true)
+                case .failed(_), .cancelled:
+                    finish(false)
+                default:
+                    break
+                }
+            }
+
+            connection.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + timeout) {
+                finish(false)
+            }
+        }
     }
 
     // ── Distributed shard helpers ─────────────────────────────────────────────

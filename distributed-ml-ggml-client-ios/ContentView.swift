@@ -12,8 +12,3 @@ struct ContentView: View {
         InferenceView()
     }
 }
-
-#Preview {
-    ContentView()
-        .environmentObject(InferenceEngine.shared)
-}

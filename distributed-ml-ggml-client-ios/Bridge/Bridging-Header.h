@@ -5,3 +5,4 @@
 //   distributed-ml-ggml-client-ios/Bridge/Bridging-Header.h
 
 #import "LlamaBridge.h"
+#import "../Diagnostics/AppDiagnostics.h"

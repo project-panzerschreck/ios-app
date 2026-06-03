@@ -30,6 +30,7 @@ extension NWConnection {
 }
 
 final class StorageServer {
+    private let logTag = "STORAGE"
     private struct RequestHeader {
         let method: String
         let path: String
@@ -61,9 +62,11 @@ final class StorageServer {
         do {
             try FileManager.default.createDirectory(at: storageDir, withIntermediateDirectories: true)
         } catch {
+            AppLogger.log("ERROR", tag: logTag, "storage.start.failed path=\(storageDir.path) error=\(error.localizedDescription)")
             return false
         }
         guard let listener = try? NWListener(using: .tcp, on: nwPort) else {
+            AppLogger.log("ERROR", tag: logTag, "storage.listen.failed port=\(port)")
             return false
         }
         self.listener = listener
@@ -71,6 +74,7 @@ final class StorageServer {
             self?.handleConnection(connection)
         }
         listener.start(queue: queue)
+        AppLogger.log(tag: logTag, "storage.start.ok port=\(port) path=\(storageDir.path)")
         return true
     }
 
@@ -78,6 +82,7 @@ final class StorageServer {
         listener?.cancel()
         listener = nil
         healthCache = nil
+        AppLogger.log(tag: logTag, "storage.stop")
     }
 
     private func handleConnection(_ connection: NWConnection) {
@@ -86,6 +91,7 @@ final class StorageServer {
             do {
                 try await handleConnectionAsync(connection)
             } catch {
+                AppLogger.log("WARN", tag: logTag, "storage.connection.error error=\(error.localizedDescription)")
                 connection.cancel()
             }
         }
@@ -153,9 +159,11 @@ final class StorageServer {
     }
 
     private func routeAsync(_ header: RequestHeader, on connection: NWConnection) async throws {
+        AppLogger.log("DEBUG", tag: logTag, "storage.request method=\(header.method) path=\(header.path)")
         if header.path.hasPrefix("/chunk/") {
             let chunkId = String(header.path.dropFirst("/chunk/".count))
             if !isValidSHA256(chunkId) {
+                AppLogger.log("WARN", tag: logTag, "storage.chunk.bad_id method=\(header.method) id=\(chunkId)")
                 if header.method == "PUT" {
                     let body = jsonBody(["error": "bad_id"])
                     try await sendResponse(status: 400, body: body, contentType: "application/json", on: connection)
@@ -193,26 +201,32 @@ final class StorageServer {
     private func handleGetChunk(id: String, on connection: NWConnection) async throws {
         let fileURL = storageDir.appendingPathComponent(id)
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            AppLogger.log("WARN", tag: logTag, "storage.chunk.get.miss id=\(id) path=\(fileURL.path)")
             let body = jsonBody(["error": "not_found"])
             try await sendResponse(status: 404, body: body, contentType: "application/json", on: connection)
             return
         }
         guard let actualHash = try? sha256Hex(for: fileURL), actualHash.caseInsensitiveCompare(id) == .orderedSame else {
+            AppLogger.log("ERROR", tag: logTag, "storage.chunk.get.corrupt id=\(id) path=\(fileURL.path)")
             let body = jsonBody(["error": "corrupted_chunk"])
             try await sendResponse(status: 404, body: body, contentType: "application/json", on: connection)
             return
         }
         guard let data = try? Data(contentsOf: fileURL) else {
+            AppLogger.log("ERROR", tag: logTag, "storage.chunk.get.read_failed id=\(id) path=\(fileURL.path)")
             try await sendResponse(status: 500, body: Data("Read failed".utf8), contentType: "text/plain", on: connection)
             return
         }
+        AppLogger.log(tag: logTag, "storage.chunk.get.hit id=\(id) bytes=\(data.count) path=\(fileURL.path)")
         try await sendResponse(status: 200, body: data, contentType: "application/octet-stream", on: connection)
     }
 
     private func handlePutChunk(id: String, header: RequestHeader, on connection: NWConnection) async throws {
         let contentLength = Int64(header.headers["content-length"] ?? "0") ?? 0
         let available = availableBytes()
+        AppLogger.log("DEBUG", tag: logTag, "storage.chunk.put.begin id=\(id) bytes=\(contentLength) free=\(available)")
         if available - contentLength < Self.minFreeBytes {
+            AppLogger.log("ERROR", tag: logTag, "storage.chunk.put.reject_insufficient_space id=\(id) bytes=\(contentLength) free=\(available)")
             let body = jsonBody(["error": "insufficient_storage"])
             try await sendResponse(status: 507, body: body, contentType: "application/json", on: connection)
             return
@@ -246,6 +260,7 @@ final class StorageServer {
             
             let actualHash = try sha256Hex(for: tempURL)
             guard actualHash.caseInsensitiveCompare(id) == .orderedSame else {
+                AppLogger.log("ERROR", tag: logTag, "storage.chunk.put.checksum_mismatch id=\(id) actual=\(actualHash) temp=\(tempURL.lastPathComponent) bytes=\(bytesWritten)")
                 try? FileManager.default.removeItem(at: tempURL)
                 let body = jsonBody(["error": "checksum_incorrect"])
                 try await sendResponse(status: 400, body: body, contentType: "application/json", on: connection)
@@ -258,8 +273,10 @@ final class StorageServer {
             }
             try FileManager.default.moveItem(at: tempURL, to: targetURL)
             healthCache = nil
+            AppLogger.log(tag: logTag, "storage.chunk.put.saved id=\(id) bytes=\(bytesWritten) path=\(targetURL.path)")
             try await sendResponse(status: 200, body: Data("OK".utf8), contentType: "text/plain", on: connection)
         } catch {
+            AppLogger.log("ERROR", tag: logTag, "storage.chunk.put.failed id=\(id) error=\(error.localizedDescription)")
             try? FileManager.default.removeItem(at: tempURL)
             try await sendResponse(status: 500, body: Data("Write failed".utf8), contentType: "text/plain", on: connection)
         }
@@ -268,15 +285,19 @@ final class StorageServer {
     private func handleDeleteChunk(id: String, on connection: NWConnection) async throws {
         let fileURL = storageDir.appendingPathComponent(id)
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            AppLogger.log("WARN", tag: logTag, "storage.chunk.delete.miss id=\(id)")
             let body = jsonBody(["error": "not_found"])
             try await sendResponse(status: 404, body: body, contentType: "application/json", on: connection)
             return
         }
         do {
+            let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
             try FileManager.default.removeItem(at: fileURL)
             healthCache = nil
+            AppLogger.log(tag: logTag, "storage.chunk.delete.ok id=\(id) bytes=\(fileSize) path=\(fileURL.path)")
             try await sendResponse(status: 200, body: Data("OK".utf8), contentType: "text/plain", on: connection)
         } catch {
+            AppLogger.log("ERROR", tag: logTag, "storage.chunk.delete.failed id=\(id) error=\(error.localizedDescription)")
             try await sendResponse(status: 500, body: Data("Delete failed".utf8), contentType: "text/plain", on: connection)
         }
     }
@@ -287,6 +308,7 @@ final class StorageServer {
             let name = url.lastPathComponent
             return isValidSHA256(name) ? name : nil
         }
+        AppLogger.log("DEBUG", tag: logTag, "storage.chunk.list count=\(chunkIds.count) path=\(storageDir.path)")
         let body = jsonBody(chunkIds)
         try await sendResponse(status: 200, body: body, contentType: "application/json", on: connection)
     }
@@ -296,6 +318,7 @@ final class StorageServer {
         let maxAgeSec = Double(maxAgeStr ?? "300") ?? 300
 
         if let cached = healthCache, Date().timeIntervalSince(cached.timestamp) < maxAgeSec {
+            AppLogger.log("DEBUG", tag: logTag, "storage.health.cached status=\(cached.status) bad_chunks=\(cached.badChunks.count) max_age=\(maxAgeSec)")
             let body = jsonBody(["status": cached.status, "bad_chunks": cached.badChunks])
             try await sendResponse(status: 200, body: body, contentType: "application/json", on: connection)
             return
@@ -311,6 +334,7 @@ final class StorageServer {
         let status = badChunks.isEmpty ? "healthy" : "degraded"
         let snapshot = StorageHealth(timestamp: Date(), status: status, badChunks: badChunks)
         healthCache = snapshot
+        AppLogger.log(tag: logTag, "storage.health.scanned status=\(status) bad_chunks=\(badChunks.count) files=\(files.count)")
         let body = jsonBody(["status": status, "bad_chunks": badChunks])
         try await sendResponse(status: 200, body: body, contentType: "application/json", on: connection)
     }
@@ -319,6 +343,7 @@ final class StorageServer {
         let total = totalBytes()
         let available = availableBytes()
         let used = usedBytes()
+        AppLogger.log("DEBUG", tag: logTag, "storage.info used=\(used) free=\(available) total=\(total)")
         let body = jsonBody([
             "total_space": total,
             "used_space": used,
