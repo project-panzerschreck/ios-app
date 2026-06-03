@@ -7,11 +7,19 @@
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
+#include <unistd.h>
 
 static const NSTimeInterval kRMStartupGraceInterval = 3.0;
-static const NSTimeInterval kRMHealthCheckTimeout = 2.0;
+static const NSTimeInterval kRMRecoveryBackoffInterval = 2.0;
+static const NSTimeInterval kRMHealthCheckTimeout = 1.0;
+static const NSTimeInterval kRMDefaultSupervisorInterval = 1.0;
+static const NSTimeInterval kRMHealthySupervisorInterval = 10.0;
+static const NSUInteger kRMStorageFailureThreshold = 3;
+static const NSUInteger kRMStorageBindMaxAttempts = 8;
+static const useconds_t kRMStorageBindRetryDelayUS = 250000;
 
 NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceDidUpdateNotification";
 
@@ -33,7 +41,9 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 @property (nonatomic, assign) NSUInteger rpcSequence;
 @property (nonatomic, strong) RMStorageServer *storageServer;
 @property (nonatomic) dispatch_source_t discoveryTimer;
-@property (nonatomic) dispatch_source_t supervisorTimer;
+@property (nonatomic) dispatch_queue_t supervisorQueue;
+@property (nonatomic, assign) BOOL supervisorLoopActive;
+@property (nonatomic, assign) NSUInteger supervisorGeneration;
 @property (nonatomic, assign) BOOL nodeShouldBeRunning;
 @property (nonatomic, assign) BOOL appIsActive;
 @property (nonatomic, assign) BOOL runtimeIsShuttingDown;
@@ -49,6 +59,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 @property (nonatomic, copy) NSString *desiredDeviceId;
 @property (nonatomic, strong) NSDate *lastRPCStartAt;
 @property (nonatomic, strong) NSDate *lastStorageStartAt;
+@property (nonatomic, assign) NSUInteger storageConsecutiveFailures;
 
 @end
 
@@ -87,6 +98,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     if (self) {
         _bridge = [[LlamaBridge alloc] init];
         _workerQueue = dispatch_queue_create("rmcluster.inference.worker", DISPATCH_QUEUE_SERIAL);
+        _supervisorQueue = dispatch_queue_create("rmcluster.node.supervisor", DISPATCH_QUEUE_SERIAL);
         _modelState = RMModelStateUnloaded;
         _rpcServerState = RMRPCServerStateIdle;
         _chatMessages = @[];
@@ -390,31 +402,45 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 }
 
 - (void)startNodeSupervisorIfNeeded {
-    if (self.supervisorTimer != nil || !self.nodeShouldBeRunning || !self.appIsActive) {
+    if (self.supervisorLoopActive || !self.nodeShouldBeRunning || !self.appIsActive) {
         return;
     }
     [RMAppLogger logWithLevel:@"INFO" tag:@"GENERAL" message:@"supervisor.start"];
-    dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
-    self.supervisorTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
-    dispatch_source_set_timer(self.supervisorTimer, DISPATCH_TIME_NOW, (uint64_t)(1.0 * NSEC_PER_SEC), (uint64_t)(0.25 * NSEC_PER_SEC));
-    __weak typeof(self) weakSelf = self;
-    dispatch_source_set_event_handler(self.supervisorTimer, ^{
-        [weakSelf runNodeSupervisorIteration];
-    });
-    dispatch_resume(self.supervisorTimer);
+    self.supervisorLoopActive = YES;
+    [self scheduleSupervisorIterationAfter:0 generation:self.supervisorGeneration];
 }
 
 - (void)stopNodeSupervisor {
-    if (self.supervisorTimer != nil) {
-        dispatch_source_cancel(self.supervisorTimer);
-        self.supervisorTimer = nil;
-    }
+    self.supervisorLoopActive = NO;
+    self.supervisorGeneration += 1;
 }
 
-- (void)runNodeSupervisorIteration {
+- (void)scheduleSupervisorIterationAfter:(NSTimeInterval)delay generation:(NSUInteger)generation {
+    if (!self.supervisorLoopActive || generation != self.supervisorGeneration) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), self.supervisorQueue, ^{
+        __strong typeof(self) strongSelf = weakSelf;
+        if (strongSelf == nil || !strongSelf.supervisorLoopActive || generation != strongSelf.supervisorGeneration) {
+            return;
+        }
+        [strongSelf runNodeSupervisorIterationAndScheduleNext];
+    });
+}
+
+- (void)runNodeSupervisorIterationAndScheduleNext {
+    NSTimeInterval nextDelay = [self runNodeSupervisorIterationReturningInterval];
+    if (!self.supervisorLoopActive) {
+        return;
+    }
+    [self scheduleSupervisorIterationAfter:nextDelay generation:self.supervisorGeneration];
+}
+
+- (NSTimeInterval)runNodeSupervisorIterationReturningInterval {
     if (!self.nodeShouldBeRunning || !self.appIsActive) {
         [self publishRuntimeHealthWithStatus:[self currentRuntimeStatusName]];
-        return;
+        return kRMDefaultSupervisorInterval;
     }
 
     [self applyKeepAwakePolicy];
@@ -428,25 +454,42 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     BOOL storageProbe = [self probeStorageHealth];
     BOOL rpcWithinGrace = self.lastRPCStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastRPCStartAt] < kRMStartupGraceInterval;
     BOOL storageWithinGrace = self.lastStorageStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastStorageStartAt] < kRMStartupGraceInterval;
+    BOOL storageRunning = self.storageServer.isRunning;
     BOOL effectiveRPCHealthy = rpcProbe || (self.rpcWorkerActive && rpcWithinGrace);
-    BOOL effectiveStorageHealthy = storageProbe || (self.storageServer != nil && storageWithinGrace);
+    BOOL effectiveStorageHealthy = storageProbe || (storageRunning && storageWithinGrace);
 
     self.rpcHealthy = effectiveRPCHealthy;
     self.storageHealthy = effectiveStorageHealthy;
 
+    [RMAppLogger logWithLevel:@"DEBUG" tag:@"GENERAL" message:[NSString stringWithFormat:
+        @"health.check rpc_probe=%@ storage_probe=%@ rpc_grace=%@ storage_grace=%@ rpc_healthy=%@ storage_healthy=%@",
+        rpcProbe ? @"YES" : @"NO",
+        storageProbe ? @"YES" : @"NO",
+        rpcWithinGrace ? @"YES" : @"NO",
+        storageWithinGrace ? @"YES" : @"NO",
+        effectiveRPCHealthy ? @"YES" : @"NO",
+        effectiveStorageHealthy ? @"YES" : @"NO"]];
+
     if (!effectiveStorageHealthy) {
+        self.storageConsecutiveFailures += 1;
         self.lastRuntimeError = @"Storage server unhealthy";
+        RMRPCServerState storageState = effectiveRPCHealthy ? RMRPCServerStateDegraded : RMRPCServerStateRecovering;
+        NSString *healthStatus = effectiveRPCHealthy ? @"degraded" : @"recovering";
         [self notifyOnMain:^{
-            self.rpcServerState = RMRPCServerStateRecovering;
+            self.rpcServerState = storageState;
             self.rpcStatusMessage = self.lastRuntimeError;
         }];
-        [self publishRuntimeHealthWithStatus:@"recovering"];
-        if (!storageWithinGrace) {
-            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.storage_unhealthy action=restart_storage"];
+        [self publishRuntimeHealthWithStatus:healthStatus];
+        if (!storageWithinGrace && self.storageConsecutiveFailures >= kRMStorageFailureThreshold) {
+            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:[NSString stringWithFormat:
+                @"health.storage_unhealthy action=restart_storage failures=%lu announce=skipped",
+                (unsigned long)self.storageConsecutiveFailures]];
+            self.storageConsecutiveFailures = 0;
             [self restartStorageServer];
         }
-        return;
+        return kRMRecoveryBackoffInterval;
     }
+    self.storageConsecutiveFailures = 0;
 
     if (!effectiveRPCHealthy) {
         self.lastRuntimeError = @"RPC worker unhealthy";
@@ -456,10 +499,10 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         }];
         [self publishRuntimeHealthWithStatus:@"recovering"];
         if (!rpcWithinGrace) {
-            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.rpc_unhealthy action=restart_rpc"];
+            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.rpc_unhealthy action=restart_rpc announce=skipped"];
             [self restartRPCWorkerWithReason:self.lastRuntimeError];
         }
-        return;
+        return kRMRecoveryBackoffInterval;
     }
 
     NSString *endpoint = self.currentRPCEndpoint.length > 0 ? self.currentRPCEndpoint : [NSString stringWithFormat:@"%@:%ld", [RMRpcSettings listenHost], (long)[RMRpcSettings listenPort]];
@@ -476,30 +519,46 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
                                servicePort:[RMRpcSettings listenPort]
                                storagePort:[RMRpcSettings storagePort]
                                   deviceId:self.desiredDeviceId];
+    return kRMHealthySupervisorInterval;
 }
 
 - (BOOL)startStorageServerIfNeeded {
-    if (self.storageServer != nil) {
+    if (self.storageServer != nil && self.storageServer.isRunning) {
         return YES;
     }
+    if (self.storageServer != nil) {
+        [self.storageServer stop];
+        self.storageServer = nil;
+    }
+
     NSInteger storagePort = [RMRpcSettings storagePort];
     self.storageServer = [[RMStorageServer alloc] initWithStorageDirectory:[[RMRpcSettings sharedSettings] storageDirectory]];
-    if (![self.storageServer startOnPort:storagePort]) {
-        self.lastRuntimeError = [NSString stringWithFormat:@"Storage failed to bind port %ld", (long)storagePort];
-        [RMAppLogger logWithLevel:@"ERROR" tag:@"GENERAL" message:[NSString stringWithFormat:@"storage.runtime.start_failed port=%ld", (long)storagePort]];
-        return NO;
+    for (NSUInteger attempt = 1; attempt <= kRMStorageBindMaxAttempts; attempt += 1) {
+        if ([self.storageServer startOnPort:storagePort]) {
+            self.lastStorageStartAt = [NSDate date];
+            [RMAppLogger logWithLevel:@"INFO" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.runtime.started port=%ld attempt=%lu", (long)storagePort, (unsigned long)attempt]];
+            return YES;
+        }
+        if (attempt < kRMStorageBindMaxAttempts) {
+            usleep(kRMStorageBindRetryDelayUS);
+        }
     }
-    self.lastStorageStartAt = [NSDate date];
-    [RMAppLogger logWithLevel:@"INFO" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.runtime.started port=%ld", (long)storagePort]];
-    return YES;
+    self.storageServer = nil;
+    self.lastRuntimeError = [NSString stringWithFormat:@"Storage failed to bind port %ld", (long)storagePort];
+    [RMAppLogger logWithLevel:@"ERROR" tag:@"GENERAL" message:[NSString stringWithFormat:@"storage.runtime.start_failed port=%ld attempts=%lu", (long)storagePort, (unsigned long)kRMStorageBindMaxAttempts]];
+    return NO;
 }
 
 - (void)restartStorageServer {
     [self stopStorageServer];
+    usleep(kRMStorageBindRetryDelayUS);
     [self startStorageServerIfNeeded];
 }
 
 - (void)stopStorageServer {
+    if (self.storageServer == nil) {
+        return;
+    }
     [self.storageServer stop];
     self.storageServer = nil;
 }
@@ -584,24 +643,98 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 }
 
 - (BOOL)probeStorageHealth {
-    if (self.storageServer == nil) {
+    if (self.storageServer == nil || !self.storageServer.isRunning) {
         return NO;
     }
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://127.0.0.1:%ld/storage_info", (long)[RMRpcSettings storagePort]]];
-    if (url == nil) {
+    NSString *detail = nil;
+    BOOL healthy = [self.class probeHTTPStatus200OnHost:@"127.0.0.1"
+                                                   port:[RMRpcSettings storagePort]
+                                                   path:@"/chunks/healthcheck?max_age=3600"
+                                                 detail:&detail];
+    if (!healthy && [self probeTCPOnHost:@"127.0.0.1" port:[RMRpcSettings storagePort]]) {
+        healthy = [self.class probeHTTPStatus200OnHost:@"127.0.0.1"
+                                                    port:[RMRpcSettings storagePort]
+                                                    path:@"/storage_info"
+                                                  detail:&detail];
+    }
+    if (!healthy && detail.length > 0) {
+        [RMAppLogger logWithLevel:@"DEBUG" tag:@"STORAGE" message:[NSString stringWithFormat:@"storage.health.probe_failed %@", detail]];
+    }
+    return healthy;
+}
+
++ (BOOL)probeHTTPStatus200OnHost:(NSString *)host port:(NSInteger)port path:(NSString *)path detail:(NSString **)detail {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
         return NO;
     }
-    NSURLRequest *request = [NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:kRMHealthCheckTimeout];
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    __block BOOL healthy = NO;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error == nil) {
-            NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-            healthy = http.statusCode == 200;
+
+    struct timeval timeout;
+    timeout.tv_sec = (time_t)kRMHealthCheckTimeout;
+    timeout.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    if (inet_pton(AF_INET, host.UTF8String, &addr.sin_addr) != 1) {
+        close(sock);
+        return NO;
+    }
+
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        if (detail != NULL) {
+            *detail = [NSString stringWithFormat:@"connect_errno=%d", errno];
         }
-        dispatch_semaphore_signal(sem);
-    }] resume];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((kRMHealthCheckTimeout + 1.0) * NSEC_PER_SEC)));
+        close(sock);
+        return NO;
+    }
+
+    NSString *request = [NSString stringWithFormat:
+                         @"GET %@ HTTP/1.1\r\n"
+                         "Host: %@\r\n"
+                         "Connection: close\r\n"
+                         "\r\n",
+                         path ?: @"/",
+                         host ?: @"127.0.0.1"];
+    NSData *requestData = [request dataUsingEncoding:NSUTF8StringEncoding];
+    ssize_t sent = send(sock, requestData.bytes, requestData.length, 0);
+    if (sent < 0) {
+        close(sock);
+        return NO;
+    }
+
+    NSMutableData *responseData = [NSMutableData data];
+    char buffer[1024];
+    while (YES) {
+        ssize_t received = recv(sock, buffer, sizeof(buffer), 0);
+        if (received <= 0) {
+            break;
+        }
+        [responseData appendBytes:buffer length:(NSUInteger)received];
+        if ([responseData rangeOfData:[@"\r\n\r\n" dataUsingEncoding:NSUTF8StringEncoding] options:0 range:NSMakeRange(0, responseData.length)].location != NSNotFound) {
+            break;
+        }
+        if (responseData.length > 8192) {
+            break;
+        }
+    }
+    close(sock);
+
+    NSString *responseText = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
+    if (responseText.length == 0) {
+        if (detail != NULL) {
+            *detail = @"empty_response";
+        }
+        return NO;
+    }
+    NSString *statusLine = [[responseText componentsSeparatedByString:@"\r\n"] firstObject];
+    BOOL healthy = [statusLine containsString:@" 200 "] || [statusLine hasSuffix:@" 200"];
+    if (!healthy && detail != NULL) {
+        *detail = [NSString stringWithFormat:@"status_line=%@", statusLine ?: @"<nil>"];
+    }
     return healthy;
 }
 

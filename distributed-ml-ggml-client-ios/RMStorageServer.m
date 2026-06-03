@@ -42,6 +42,8 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
 @property (nonatomic, strong) dispatch_queue_t serverQueue;
 @property (nonatomic, strong) dispatch_source_t acceptSource;
 @property (nonatomic, strong) RMStorageServerHealthSnapshot *healthCache;
+@property (nonatomic, strong) NSData *storageInfoCacheBody;
+@property (nonatomic, strong) NSDate *storageInfoCacheTimestamp;
 @property (nonatomic, assign, getter=isRunning) BOOL running;
 
 @end
@@ -53,7 +55,7 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
     if (self) {
         _storageDirectory = storageDirectory;
         _listeningSocket = -1;
-        _serverQueue = dispatch_queue_create("rmcluster.storage-server", DISPATCH_QUEUE_CONCURRENT);
+        _serverQueue = dispatch_queue_create("rmcluster.storage-server", DISPATCH_QUEUE_SERIAL);
     }
     return self;
 }
@@ -123,6 +125,8 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
 - (void)stop {
     self.running = NO;
     self.healthCache = nil;
+    self.storageInfoCacheBody = nil;
+    self.storageInfoCacheTimestamp = nil;
 
     if (self.acceptSource != nil) {
         dispatch_source_cancel(self.acceptSource);
@@ -148,7 +152,7 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
             break;
         }
 
-        dispatch_async(self.serverQueue, ^{
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             @autoreleasepool {
                 [self handleClient:clientFD];
             }
@@ -202,6 +206,18 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
 
     NSString *method = parts[0];
     NSString *target = parts[1];
+    NSRange queryRange = [target rangeOfString:@"?"];
+    NSString *path = target;
+    NSString *query = @"";
+    if (queryRange.location != NSNotFound) {
+        path = [target substringToIndex:queryRange.location];
+        if (queryRange.location + 1 < target.length) {
+            query = [target substringFromIndex:queryRange.location + 1];
+        }
+    }
+    if (path.length == 0 || [path characterAtIndex:0] != '/') {
+        return nil;
+    }
 
     NSMutableDictionary<NSString *, NSString *> *headers = [NSMutableDictionary dictionary];
     for (NSUInteger idx = 1; idx < lines.count; idx += 1) {
@@ -215,20 +231,35 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
         headers[key] = value ?: @"";
     }
 
-    NSURL *baseURL = [NSURL URLWithString:@"http://localhost"];
-    NSURL *targetURL = [NSURL URLWithString:target relativeToURL:baseURL];
-    NSURLComponents *components = [NSURLComponents componentsWithURL:targetURL resolvingAgainstBaseURL:YES];
-    if (components.path.length == 0) {
-        return nil;
-    }
-
     RMStorageServerRequest *request = [[RMStorageServerRequest alloc] init];
     request.method = method;
-    request.path = components.path;
-    request.queryItems = components.queryItems ?: @[];
+    request.path = path;
+    request.queryItems = [self queryItemsFromQueryString:query];
     request.headers = headers;
     request.leftoverBody = leftoverBody ?: [NSData data];
     return request;
+}
+
+- (NSArray<NSURLQueryItem *> *)queryItemsFromQueryString:(NSString *)query {
+    if (query.length == 0) {
+        return @[];
+    }
+
+    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray array];
+    for (NSString *pair in [query componentsSeparatedByString:@"&"]) {
+        if (pair.length == 0) {
+            continue;
+        }
+        NSRange equalsRange = [pair rangeOfString:@"="];
+        if (equalsRange.location == NSNotFound) {
+            [items addObject:[NSURLQueryItem queryItemWithName:pair value:@""]];
+            continue;
+        }
+        NSString *name = [[pair substringToIndex:equalsRange.location] stringByRemovingPercentEncoding] ?: @"";
+        NSString *value = [[pair substringFromIndex:equalsRange.location + 1] stringByRemovingPercentEncoding] ?: @"";
+        [items addObject:[NSURLQueryItem queryItemWithName:name value:value]];
+    }
+    return items;
 }
 
 - (void)routeRequest:(RMStorageServerRequest *)request socket:(int)clientFD {
@@ -380,6 +411,8 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
     }
 
     self.healthCache = nil;
+    self.storageInfoCacheBody = nil;
+    self.storageInfoCacheTimestamp = nil;
     [self sendResponseOnSocket:clientFD status:200 body:[@"OK" dataUsingEncoding:NSUTF8StringEncoding] contentType:@"text/plain"];
 }
 
@@ -400,6 +433,8 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
     }
 
     self.healthCache = nil;
+    self.storageInfoCacheBody = nil;
+    self.storageInfoCacheTimestamp = nil;
     [self sendResponseOnSocket:clientFD status:200 body:[@"OK" dataUsingEncoding:NSUTF8StringEncoding] contentType:@"text/plain"];
 }
 
@@ -467,12 +502,23 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
 }
 
 - (void)handleStorageInfoOnSocket:(int)clientFD {
+    static const NSTimeInterval kStorageInfoCacheTTL = 5.0;
+    NSDate *now = [NSDate date];
+    if (self.storageInfoCacheBody != nil && self.storageInfoCacheTimestamp != nil &&
+        [now timeIntervalSinceDate:self.storageInfoCacheTimestamp] < kStorageInfoCacheTTL) {
+        [self sendResponseOnSocket:clientFD status:200 body:self.storageInfoCacheBody contentType:@"application/json"];
+        return;
+    }
+
     NSDictionary *body = @{
         @"total_space" : @([self totalBytes]),
         @"used_space" : @([self usedBytes]),
         @"available_space" : @([self availableBytes])
     };
-    [self sendResponseOnSocket:clientFD status:200 body:[self jsonBody:body] contentType:@"application/json"];
+    NSData *jsonBody = [self jsonBody:body];
+    self.storageInfoCacheBody = jsonBody;
+    self.storageInfoCacheTimestamp = now;
+    [self sendResponseOnSocket:clientFD status:200 body:jsonBody contentType:@"application/json"];
 }
 
 - (BOOL)isValidSHA256:(NSString *)value {

@@ -5,5 +5,6 @@
 - (instancetype)initWithStorageDirectory:(NSURL *)storageDirectory;
 - (BOOL)startOnPort:(NSInteger)port;
 - (void)stop;
+- (BOOL)isRunning;
 
 @end

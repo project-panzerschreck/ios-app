@@ -125,6 +125,48 @@ Check that the IPA does not contain signing payloads:
 unzip -l packages/rmclusternode-6-unsigned.ipa | rg "embedded.mobileprovision|_CodeSignature" || true
 ```
 
+## CI (GitHub Actions)
+
+Pushes and pull requests to `iphone6` run [`.github/workflows/iphone6.yml`](.github/workflows/iphone6.yml):
+
+1. Check out this repo and `rmcluster/llama.cpp-rpc` at ref `iphone6-build`.
+2. `IOS_MIN=12.0 bash scripts/build-ggml-ios.sh` — produces `Frameworks/*.xcframework`.
+3. `bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa` — Theos unsigned IPA.
+
+The workflow uploads `packages/rmclusternode-6-unsigned.ipa` as an artifact. Locally, the same script chain should succeed on macOS with Xcode, Theos, and `cmake` installed.
+
+**Important:** XCFrameworks must be built with `IOS_MIN=12.0`. Frameworks built for a higher deployment target (for example from `ios-app` at iOS 15.6) will link but crash at launch on iOS 12 with missing C++ symbols.
+
+## Node runtime, health, and recovery
+
+The RMCluster Node tab runs a background **supervisor** (`RMInferenceService`) that keeps the local RPC worker and HTTP storage server alive and announces to the coordinator.
+
+### Supervisor behavior
+
+- Runs on a dedicated serial queue with **chained delays** (not a repeating 1s timer): 10s when healthy, 2s backoff while recovering.
+- **3s startup grace** after RPC or storage start before failed probes trigger a restart.
+- **Storage:** requires **3 consecutive** failed health checks before restart (avoids flapping on a single slow probe).
+- **RPC healthy + storage unhealthy:** UI state is **Degraded** (RPC keeps running); both unhealthy → **Recovering**.
+- Health probes use a **synchronous socket HTTP** client (not `NSURLSession`), which is reliable on iOS 12 background queues.
+
+### Storage server (`RMStorageServer`)
+
+- Listens on the storage port from `RMRpcSettings` (default `47672`).
+- Accept loop stays on a serial queue; **each client is handled on a concurrent queue** so large chunk GET/PUT does not block health checks.
+- Request path/query parsing is manual (no `NSURL` on the request line) for compatibility on iOS 12.
+- Supervisor storage probe: `GET /chunks/healthcheck?max_age=3600` (cached), with fallback to `/storage_info` (5s response cache).
+- Storage bind retries up to 8 times with 250ms delay after stop/restart to avoid `EADDRINUSE` on immediate rebind.
+
+### Logs
+
+The **Logs** tab shows in-app diagnostics (`RMAppLogger` / `AppDiagnostics`). Useful tags: `GENERAL` (`health.check`, `health.storage_unhealthy`), `STORAGE`, `RPC SERVER`.
+
+### Device log capture
+
+```sh
+idevicesyslog 2>/dev/null | rg 'rmclusternode|health\.|storage\.|rpc\.'
+```
+
 ## Notes
 
 - This branch does not use SwiftUI. The UI is the UIKit / Objective-C port.
