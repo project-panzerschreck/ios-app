@@ -252,6 +252,16 @@
 }
 
 - (void)buildRPCPane {
+    UILabel *nodeNameTitle = [[UILabel alloc] init];
+    nodeNameTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    nodeNameTitle.text = @"Node Name";
+    [self.rpcPane addArrangedSubview:nodeNameTitle];
+
+    self.nicknameField = [self textFieldWithPlaceholder:@"Phone nickname"];
+    self.nicknameField.textAlignment = NSTextAlignmentCenter;
+    self.nicknameField.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    [self.rpcPane addArrangedSubview:self.nicknameField];
+
     UILabel *endpointTitle = [[UILabel alloc] init];
     endpointTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     endpointTitle.text = @"Endpoints";
@@ -267,50 +277,41 @@
     [self.endpointsTextView.heightAnchor constraintGreaterThanOrEqualToConstant:120.0].active = YES;
     [self.rpcPane addArrangedSubview:self.endpointsTextView];
 
-    self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
-    self.nicknameField = [self textFieldWithPlaceholder:@"Optional phone nickname"];
-    self.serverHostField = [self textFieldWithPlaceholder:@"Coordinator host"];
-    self.serverPortField = [self numericField];
-    self.threadCountField = [self numericField];
-
-    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Nickname" field:self.nicknameField]];
+    UILabel *connectionTitle = [[UILabel alloc] init];
+    connectionTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    connectionTitle.text = @"Connection";
+    [self.rpcPane addArrangedSubview:connectionTitle];
 
     UIButton *scanQRButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [scanQRButton setTitle:@"Scan QR code" forState:UIControlStateNormal];
     [scanQRButton addTarget:self action:@selector(scanQRTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.rpcPane addArrangedSubview:scanQRButton];
 
-    UIButton *clipboardButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [clipboardButton setTitle:@"Import from clipboard" forState:UIControlStateNormal];
-    [clipboardButton addTarget:self action:@selector(importFromClipboardTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.rpcPane addArrangedSubview:clipboardButton];
-
+    self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
     [self.rpcPane addArrangedSubview:self.connectionStringField];
-
-    UIButton *applyConnectionButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [applyConnectionButton setTitle:@"Apply connection string" forState:UIControlStateNormal];
-    [applyConnectionButton addTarget:self action:@selector(applyConnectionStringTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.rpcPane addArrangedSubview:applyConnectionButton];
-
-    [self.rpcPane addArrangedSubview:self.serverHostField];
-    self.serverPortStepper = [[UIStepper alloc] init];
-    [self.serverPortStepper addTarget:self action:@selector(serverPortStepperChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Coordinator port" field:self.serverPortField stepper:self.serverPortStepper]];
 
     self.importStatusLabel = [[UILabel alloc] init];
     self.importStatusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
     self.importStatusLabel.numberOfLines = 0;
+    self.importStatusLabel.textColor = [UIColor grayColor];
     [self.rpcPane addArrangedSubview:self.importStatusLabel];
+
+    UILabel *coordinatorTitle = [[UILabel alloc] init];
+    coordinatorTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    coordinatorTitle.text = @"Coordinator";
+    [self.rpcPane addArrangedSubview:coordinatorTitle];
+
+    self.serverHostField = [self textFieldWithPlaceholder:@"Server IP or host"];
+    self.serverPortField = [self numericField];
+    self.threadCountField = [self numericField];
+    [self.rpcPane addArrangedSubview:self.serverHostField];
+    self.serverPortStepper = [[UIStepper alloc] init];
+    [self.serverPortStepper addTarget:self action:@selector(serverPortStepperChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Server port" field:self.serverPortField stepper:self.serverPortStepper]];
 
     self.threadCountStepper = [[UIStepper alloc] init];
     [self.threadCountStepper addTarget:self action:@selector(threadStepperChanged:) forControlEvents:UIControlEventValueChanged];
     [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Thread count" field:self.threadCountField stepper:self.threadCountStepper]];
-
-    UILabel *footer = [[UILabel alloc] init];
-    footer.numberOfLines = 0;
-    footer.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
-    footer.text = @"Paste a rmcluster://connect URL, scan a QR code, or manually edit the coordinator host and port.";
-    [self.rpcPane addArrangedSubview:footer];
 
     self.rpcStatusLabel = [[UILabel alloc] init];
     self.rpcStatusLabel.numberOfLines = 0;
@@ -479,7 +480,7 @@
             self.rpcStartStopButton.enabled = NO;
             break;
         case RMRPCServerStateRunning:
-            [self.rpcStartStopButton setTitle:@"Stop RPC server" forState:UIControlStateNormal];
+            [self.rpcStartStopButton setTitle:@"Disconnect" forState:UIControlStateNormal];
             self.rpcStartStopButton.enabled = YES;
             break;
         case RMRPCServerStateUnavailable:
@@ -500,10 +501,11 @@
         return;
     }
 
+    BOOL isRunning = (self.service.rpcServerState == RMRPCServerStateRunning || self.service.rpcServerState == RMRPCServerStateStarting);
     NSMutableArray<NSString *> *lines = [NSMutableArray array];
     for (RMLocalInterface *interface in interfaces) {
-        [lines addObject:[NSString stringWithFormat:@"RPC %@:%ld", interface.ip, (long)[RMRpcSettings listenPort]]];
-        [lines addObject:[NSString stringWithFormat:@"Storage %@:%ld", interface.ip, (long)[RMRpcSettings storagePort]]];
+        NSString *status = isRunning ? @"●" : @"○";
+        [lines addObject:[NSString stringWithFormat:@"%@ RPC %@", status, interface.ip]];
         [lines addObject:interface.label ?: @""];
         [lines addObject:@""];
     }
