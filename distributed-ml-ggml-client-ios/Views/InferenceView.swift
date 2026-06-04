@@ -193,7 +193,6 @@ struct InferenceView: View {
                             .foregroundColor(.secondary)
                         Text(msg.content.isEmpty ? "…" : msg.content)
                             .font(.body)
-                            .textSelection(.enabled)
                             .frame(maxWidth: .infinity,
                                    alignment: msg.role == "user" ? .trailing : .leading)
                     }
@@ -597,7 +596,7 @@ private struct StatChip: View {
             .font(.system(.caption2, design: .monospaced))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(.quaternary, in: Capsule())
+            .background(Capsule().fill(Color(UIColor.quaternarySystemFill)))
     }
 }
 
