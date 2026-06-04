@@ -1,4 +1,5 @@
 #import "RMRpcSettings.h"
+#import "Bridge/LlamaBridge.h"
 #import <UIKit/UIKit.h>
 
 static NSString * const RMNicknameKey = @"rpcNickname";
@@ -6,6 +7,7 @@ static NSString * const RMThreadsKey = @"rpcThreads";
 static NSString * const RMDeviceIdKey = @"rpcDeviceId";
 static NSString * const RMClusterServerHostKey = @"clusterServerHost";
 static NSString * const RMClusterServerPortKey = @"clusterServerPort";
+static NSString * const RMVerboseRPCLoggingKey = @"verboseRPCLogging";
 static NSString * const RMLegacyDiscoveryIpKey = @"rpcDiscoveryIp";
 static NSString * const RMLegacyDiscoveryPortKey = @"rpcDiscoveryPort";
 static NSString * const RMLegacyDeviceLabelKey = @"clusterDeviceLabel";
@@ -50,10 +52,25 @@ static NSString * const RMLegacyDeviceLabelKey = @"clusterDeviceLabel";
         _clusterServerPort = [defaults integerForKey:RMClusterServerPortKey];
         if (_clusterServerPort == 0) {
             NSInteger legacyPort = [defaults integerForKey:RMLegacyDiscoveryPortKey];
-            _clusterServerPort = legacyPort > 0 ? legacyPort : 4917;
+            _clusterServerPort = legacyPort > 0 ? legacyPort : [RMRpcSettings defaultClusterServerPort];
         }
+
+#if defined(VERBOSE_RPC_DEFAULT)
+        if ([defaults objectForKey:RMVerboseRPCLoggingKey] == nil) {
+            _verboseRPCLogging = YES;
+        } else {
+            _verboseRPCLogging = [defaults boolForKey:RMVerboseRPCLoggingKey];
+        }
+#else
+        _verboseRPCLogging = [defaults boolForKey:RMVerboseRPCLoggingKey];
+#endif
+        [LlamaBridge configureRPCLoggingVerbose:_verboseRPCLogging];
     }
     return self;
+}
+
++ (NSInteger)defaultClusterServerPort {
+    return 4917;
 }
 
 - (void)setNickname:(NSString *)nickname {
@@ -73,12 +90,26 @@ static NSString * const RMLegacyDeviceLabelKey = @"clusterDeviceLabel";
 
 - (void)setClusterServerHost:(NSString *)clusterServerHost {
     _clusterServerHost = [clusterServerHost copy] ?: @"";
-    [[NSUserDefaults standardUserDefaults] setObject:_clusterServerHost forKey:RMClusterServerHostKey];
 }
 
 - (void)setClusterServerPort:(NSInteger)clusterServerPort {
     _clusterServerPort = clusterServerPort;
-    [[NSUserDefaults standardUserDefaults] setInteger:clusterServerPort forKey:RMClusterServerPortKey];
+}
+
+- (void)setVerboseRPCLogging:(BOOL)verboseRPCLogging {
+    _verboseRPCLogging = verboseRPCLogging;
+    [self persistVerboseRPCLogging];
+    [LlamaBridge configureRPCLoggingVerbose:verboseRPCLogging];
+}
+
+- (void)persistClusterConnection {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:_clusterServerHost forKey:RMClusterServerHostKey];
+    [defaults setInteger:_clusterServerPort forKey:RMClusterServerPortKey];
+}
+
+- (void)persistVerboseRPCLogging {
+    [[NSUserDefaults standardUserDefaults] setBool:_verboseRPCLogging forKey:RMVerboseRPCLoggingKey];
 }
 
 + (NSString *)listenHost {

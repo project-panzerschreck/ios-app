@@ -1,12 +1,14 @@
 #import "AppDelegate.h"
 #import "RMRootViewController.h"
 #import "RMInferenceService.h"
+#import "RMRpcSettings.h"
 
 NSString * const RMOpenURLNotification = @"RMOpenURLNotification";
 
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    [RMRpcSettings sharedSettings];
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     RMRootViewController *rootViewController = [[RMRootViewController alloc] init];
     self.window.rootViewController = rootViewController;

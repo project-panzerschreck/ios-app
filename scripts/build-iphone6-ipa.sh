@@ -12,6 +12,11 @@ if [[ ! -d Frameworks ]]; then
   exit 1
 fi
 
-make clean ipa
+VERBOSE_RPC="${VERBOSE_RPC:-0}"
+if [[ "$VERBOSE_RPC" == "1" ]]; then
+  echo "[build-iphone6-ipa] Building with VERBOSE_RPC_DEFAULT (GGML/RPC logs enabled by default in app)"
+fi
+
+VERBOSE_RPC="$VERBOSE_RPC" make clean ipa
 cp -f packages/rmclusternode_1.0.0_unsigned.ipa "${1:-packages/rmclusternode-6-unsigned.ipa}"
 echo "Wrote ${1:-packages/rmclusternode-6-unsigned.ipa}"

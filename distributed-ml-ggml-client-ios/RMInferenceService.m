@@ -1,4 +1,5 @@
 #import "RMInferenceService.h"
+#import "Bridge/LlamaBridge.h"
 #import "RMChatMessage.h"
 #import "RMRpcSettings.h"
 #import "RMStorageServer.h"
@@ -575,7 +576,11 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     self.runtimeIsShuttingDown = NO;
     NSUInteger sequence = self.rpcSequence;
 
-    [RMAppLogger logWithLevel:@"INFO" tag:@"RPC SERVER" message:[NSString stringWithFormat:@"rpc.start.begin endpoint=%@", self.currentRPCEndpoint]];
+    [LlamaBridge configureRPCLoggingVerbose:[RMRpcSettings sharedSettings].verboseRPCLogging];
+    [RMAppLogger logWithLevel:@"INFO" tag:@"RPC SERVER" message:[NSString stringWithFormat:
+        @"rpc.start.begin endpoint=%@ verbose=%@",
+        self.currentRPCEndpoint,
+        [RMRpcSettings sharedSettings].verboseRPCLogging ? @"YES" : @"NO"]];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSUInteger totalMB = [LlamaBridge processMemoryBudgetBytes] / 1048576ULL;
         NSUInteger freeMB = [LlamaBridge processAvailableMemoryBytes] / 1048576ULL;

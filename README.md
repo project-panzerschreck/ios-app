@@ -1,6 +1,8 @@
 # rmcluster node on iPhone 6 (iOS 12)
 
-For current branch-specific build steps, read [BUILDING.md](BUILDING.md).
+For current branch-specific build steps, read [BUILDING.md](BUILDING.md). CI builds via [`.github/workflows/iphone6.yml`](.github/workflows/iphone6.yml) with **verbose RPC logging on by default** in the IPA.
+
+Coordinator IP/port load from disk **once at app launch** and save when you connect (manual edits are not overwritten by a stale connection URL). See [BUILDING.md — Verbose RPC / GGML logging](BUILDING.md#verbose-rpc--ggml-logging) for log detail.
 
 This repository contains a legacy UIKit / Objective-C port of the original one-screen SwiftUI app, rebuilt so it can run on an iPhone 5-class device:
 

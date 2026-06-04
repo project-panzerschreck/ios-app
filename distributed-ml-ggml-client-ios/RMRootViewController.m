@@ -626,30 +626,59 @@
 }
 
 - (void)rpcStartStopTapped:(id)sender {
-    [self syncSettingsFromFields];
     if (self.service.rpcServerState == RMRPCServerStateRunning || self.service.rpcServerState == RMRPCServerStateStarting) {
         [self.service stopRPCServer];
-    } else {
-        [self.service startRPCServerWithCoordinatorHost:self.settings.clusterServerHost
-                                        coordinatorPort:self.settings.clusterServerPort
-                                               nickname:self.settings.nickname
-                                                threads:self.settings.threads
-                                               deviceId:self.settings.deviceId];
+        return;
     }
+
+    if (![self prepareCoordinatorSettingsForStart]) {
+        return;
+    }
+
+    [self syncSettingsFromFields];
+    [self.settings persistClusterConnection];
+    [self.service startRPCServerWithCoordinatorHost:self.settings.clusterServerHost
+                                    coordinatorPort:self.settings.clusterServerPort
+                                           nickname:self.settings.nickname
+                                            threads:self.settings.threads
+                                           deviceId:self.settings.deviceId];
+}
+
+- (BOOL)prepareCoordinatorSettingsForStart {
+    NSString *trimmedHost = [[self.serverHostField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (trimmedHost.length > 0) {
+        self.settings.clusterServerHost = trimmedHost;
+        NSInteger port = [self.serverPortField.text integerValue];
+        self.settings.clusterServerPort = port > 0 ? port : [RMRpcSettings defaultClusterServerPort];
+        self.importStatusLabel.text = @"";
+        return YES;
+    }
+
+    NSString *pendingConnection = [[self.connectionStringField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (pendingConnection.length > 0) {
+        if (![self applyConnectionConfigFromString:pendingConnection]) {
+            return NO;
+        }
+        return YES;
+    }
+
+    self.importStatusLabel.text = @"Enter a coordinator server IP or paste a connection string.";
+    return NO;
 }
 
 - (void)syncSettingsFromFields {
     self.settings.nickname = self.nicknameField.text ?: @"";
     self.settings.clusterServerHost = self.serverHostField.text ?: @"";
-    self.settings.clusterServerPort = [self.serverPortField.text integerValue];
+    NSInteger port = [self.serverPortField.text integerValue];
+    self.settings.clusterServerPort = port > 0 ? port : [RMRpcSettings defaultClusterServerPort];
     self.settings.threads = MAX(1, [self.threadCountField.text integerValue]);
 }
 
-- (void)applyConnectionConfigFromString:(NSString *)rawValue {
+- (BOOL)applyConnectionConfigFromString:(NSString *)rawValue {
     RMConnectionBootstrapPayload *payload = [RMConnectionBootstrapPayload payloadWithRawValue:rawValue];
     if (payload == nil) {
         self.importStatusLabel.text = @"Could not parse connection data.";
-        return;
+        return NO;
     }
 
     self.connectionStringField.text = [rawValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -670,6 +699,7 @@
     self.segmentControl.selectedSegmentIndex = 1;
     [self segmentChanged:self.segmentControl];
     self.importStatusLabel.text = @"";
+    return YES;
 }
 
 - (void)serverPortStepperChanged:(UIStepper *)sender {

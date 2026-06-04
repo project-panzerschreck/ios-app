@@ -130,6 +130,11 @@ typedef void (^LlamaShardCallback)(NSData *hiddenState,
 //
 // Requires the ggml-rpc.xcframework (rebuild with GGML_RPC=ON; see build-ggml-ios.sh).
 
+/// Routes GGML / RPC library logs into AppDiagnostics (Logs tab) and NSLog.
+/// When verbose is YES, also sets GGML_RPC_DEBUG and forwards RPC server stdout.
+/// Call before starting the RPC worker; reconnect after changing verbose at runtime.
++ (void)configureRPCLoggingVerbose:(BOOL)verbose;
+
 /// Returns YES if the GGML RPC backend was compiled into this build.
 /// Requires ggml-rpc.xcframework linked in the Xcode target.
 + (BOOL)rpcAvailable;

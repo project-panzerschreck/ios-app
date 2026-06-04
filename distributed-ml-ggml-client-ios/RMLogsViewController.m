@@ -1,5 +1,6 @@
 #import "RMLogsViewController.h"
 #import "Diagnostics/AppDiagnostics.h"
+#import "RMRpcSettings.h"
 
 typedef NS_ENUM(NSInteger, RMLogCategory) {
     RMLogCategoryRPC = 0,
@@ -10,8 +11,11 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
 @interface RMLogsViewController ()
 
 @property (nonatomic, strong) UILabel *healthLabel;
+@property (nonatomic, strong) UISwitch *verboseSwitch;
+@property (nonatomic, strong) UILabel *verboseLabel;
 @property (nonatomic, strong) UISegmentedControl *filterControl;
 @property (nonatomic, strong) UITextView *logTextView;
+@property (nonatomic, strong) RMRpcSettings *settings;
 
 @end
 
@@ -21,12 +25,25 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor whiteColor];
     self.title = @"Logs";
+    self.settings = [RMRpcSettings sharedSettings];
 
     self.healthLabel = [[UILabel alloc] init];
     self.healthLabel.numberOfLines = 0;
     self.healthLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     self.healthLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.healthLabel];
+
+    self.verboseLabel = [[UILabel alloc] init];
+    self.verboseLabel.text = @"Verbose RPC / GGML logs";
+    self.verboseLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    self.verboseLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.verboseLabel];
+
+    self.verboseSwitch = [[UISwitch alloc] init];
+    self.verboseSwitch.on = self.settings.verboseRPCLogging;
+    [self.verboseSwitch addTarget:self action:@selector(verboseSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    self.verboseSwitch.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.verboseSwitch];
 
     self.filterControl = [[UISegmentedControl alloc] initWithItems:@[ @"RPC", @"Storage", @"General" ]];
     self.filterControl.selectedSegmentIndex = 0;
@@ -57,7 +74,12 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
         [self.healthLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
         [self.healthLabel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
 
-        [self.filterControl.topAnchor constraintEqualToAnchor:self.healthLabel.bottomAnchor constant:12.0],
+        [self.verboseLabel.topAnchor constraintEqualToAnchor:self.healthLabel.bottomAnchor constant:12.0],
+        [self.verboseLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
+        [self.verboseSwitch.centerYAnchor constraintEqualToAnchor:self.verboseLabel.centerYAnchor],
+        [self.verboseSwitch.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
+
+        [self.filterControl.topAnchor constraintEqualToAnchor:self.verboseLabel.bottomAnchor constant:12.0],
         [self.filterControl.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
         [self.filterControl.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
 
@@ -90,10 +112,14 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
     if ([line containsString:@"[STORAGE]"]) {
         return category == RMLogCategoryStorage;
     }
-    if ([line containsString:@"[RPC SERVER]"]) {
+    if ([line containsString:@"[RPC SERVER]"] || [line containsString:@"[GGML]"]) {
         return category == RMLogCategoryRPC;
     }
     return category == RMLogCategoryGeneral;
+}
+
+- (void)verboseSwitchChanged:(UISwitch *)sender {
+    self.settings.verboseRPCLogging = sender.isOn;
 }
 
 - (void)refreshLogs {

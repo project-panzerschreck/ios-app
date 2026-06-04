@@ -36,9 +36,10 @@ jobs:
         run: |
           IOS_MIN=12.0 bash scripts/build-ggml-ios.sh
 
-      - name: Build unsigned IPA
+      - name: Build unsigned IPA (verbose RPC logging default)
         env:
           THEOS: ${{ env.HOME }}/theos
+          VERBOSE_RPC: "1"
         run: |
           export IOS16_SDK_ROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
           bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa

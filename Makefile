@@ -92,6 +92,10 @@ rmclusternode_CCFLAGS = \
 	-fmodules-cache-path=$(MODULE_CACHE_DIR) \
 	-I$(ARM64_LLAMA_INCLUDE_DIR) \
 	-I$(ARM64_GGML_INCLUDE_DIR)
+ifeq ($(VERBOSE_RPC),1)
+rmclusternode_CFLAGS += -DVERBOSE_RPC_DEFAULT=1
+rmclusternode_CCFLAGS += -DVERBOSE_RPC_DEFAULT=1
+endif
 rmclusternode_LDFLAGS += \
 	$(ARM64_XCFRAMEWORK_DIR)/llama.xcframework/ios-arm64/libllama.a \
 	$(ARM64_XCFRAMEWORK_DIR)/ggml.xcframework/ios-arm64/libggml.a \

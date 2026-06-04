@@ -131,7 +131,7 @@ Pushes and pull requests to `iphone6` run [`.github/workflows/iphone6.yml`](.git
 
 1. Check out this repo and `rmcluster/llama.cpp-rpc` at ref `iphone6-build`.
 2. `IOS_MIN=12.0 bash scripts/build-ggml-ios.sh` — produces `Frameworks/*.xcframework`.
-3. `bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa` — Theos unsigned IPA.
+3. `VERBOSE_RPC=1 bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa` — Theos unsigned IPA (verbose RPC logs on by default).
 
 The workflow uploads `packages/rmclusternode-6-unsigned.ipa` as an artifact. Locally, the same script chain should succeed on macOS with Xcode, Theos, and `cmake` installed.
 
@@ -164,8 +164,23 @@ The **Logs** tab shows in-app diagnostics (`RMAppLogger` / `AppDiagnostics`). Us
 ### Device log capture
 
 ```sh
-idevicesyslog 2>/dev/null | rg 'rmclusternode|health\.|storage\.|rpc\.'
+idevicesyslog 2>/dev/null | rg 'rmclusternode|health\.|storage\.|rpc\.|\[GGML\]'
 ```
+
+### Verbose RPC / GGML logging
+
+The **Logs** tab includes **Verbose RPC / GGML logs**. Disconnect and reconnect the node after toggling so the RPC worker restarts with the new setting.
+
+| Build | Verbose default |
+|-------|-----------------|
+| CI IPA (`iphone6` workflow) | On (`VERBOSE_RPC=1`) |
+| Local IPA | Off unless `VERBOSE_RPC=1` |
+
+```sh
+VERBOSE_RPC=1 bash scripts/build-iphone6-ipa.sh packages/rmclusternode-6-unsigned.ipa
+```
+
+With verbose enabled you should see `[GGML]` lines (RPC server startup, client connect/disconnect, cache events) and `[RPC SERVER]` supervisor messages in the Logs panel. For wire-level detail, cold-start with Xcode scheme env `GGML_RPC_DEBUG=1`.
 
 ## Notes
 
