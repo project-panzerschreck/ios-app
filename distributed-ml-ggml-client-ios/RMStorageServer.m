@@ -45,6 +45,8 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
 @property (nonatomic, strong) dispatch_source_t acceptSource;
 @property (nonatomic, strong) RMStorageServerHealthSnapshot *healthCache;
 @property (nonatomic, assign, readwrite, getter=isRunning) BOOL running;
+@property (nonatomic, assign) NSInteger activeRequestCount;
+@property (nonatomic, strong) NSLock *activeRequestLock;
 
 @end
 
@@ -56,8 +58,16 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
         _storageDirectory = storageDirectory;
         _listeningSocket = -1;
         _serverQueue = dispatch_queue_create("rmcluster.storage-server", DISPATCH_QUEUE_CONCURRENT);
+        _activeRequestLock = [[NSLock alloc] init];
     }
     return self;
+}
+
+- (BOOL)isBusy {
+    [self.activeRequestLock lock];
+    BOOL busy = self.activeRequestCount > 0;
+    [self.activeRequestLock unlock];
+    return busy;
 }
 
 - (BOOL)startOnPort:(NSInteger)port {
@@ -172,6 +182,10 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
 }
 
 - (void)handleClient:(int)clientFD {
+    [self.activeRequestLock lock];
+    self.activeRequestCount += 1;
+    [self.activeRequestLock unlock];
+
     NSMutableData *buffer = [NSMutableData data];
     NSData *marker = [@"\r\n\r\n" dataUsingEncoding:NSUTF8StringEncoding];
 
@@ -185,10 +199,16 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
             if (request == nil) {
                 [self sendResponseOnSocket:clientFD status:400 body:[@"Invalid Header" dataUsingEncoding:NSUTF8StringEncoding] contentType:@"text/plain"];
                 close(clientFD);
+                [self.activeRequestLock lock];
+                self.activeRequestCount = MAX(0, self.activeRequestCount - 1);
+                [self.activeRequestLock unlock];
                 return;
             }
             [self routeRequest:request socket:clientFD];
             close(clientFD);
+            [self.activeRequestLock lock];
+            self.activeRequestCount = MAX(0, self.activeRequestCount - 1);
+            [self.activeRequestLock unlock];
             return;
         }
 
@@ -196,6 +216,9 @@ static const int64_t RMStorageServerMinFreeBytes = 50LL * 1024LL * 1024LL;
         ssize_t readCount = recv(clientFD, chunk, sizeof(chunk), 0);
         if (readCount <= 0) {
             close(clientFD);
+            [self.activeRequestLock lock];
+            self.activeRequestCount = MAX(0, self.activeRequestCount - 1);
+            [self.activeRequestLock unlock];
             return;
         }
         [buffer appendBytes:chunk length:(NSUInteger)readCount];

@@ -1,4 +1,5 @@
 #import "AppDelegate.h"
+#import "Bridge/LlamaBridge.h"
 #import "RMInferenceService.h"
 #import "RMRootViewController.h"
 
@@ -7,6 +8,7 @@ NSString * const RMOpenURLNotification = @"RMOpenURLNotification";
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    [LlamaBridge installGgmlLogging];
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     RMRootViewController *rootViewController = [[RMRootViewController alloc] init];
     self.window.rootViewController = rootViewController;

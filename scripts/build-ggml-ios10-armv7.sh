@@ -172,6 +172,24 @@ if old in source:
     source = source.replace(old, new, 1)
     path.write_text(source)
 PY
+    if [[ "${GGML_RPC_VERBOSE:-0}" == "1" ]]; then
+        log "Applying GGML_RPC_VERBOSE patches (route printf/fprintf to GGML_LOG_*)"
+        python3 - <<'PY' "$RPC_SOURCE"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+source = source.replace(
+    "static const char * RPC_DEBUG = std::getenv(\"GGML_RPC_DEBUG\");",
+    "static const char * RPC_DEBUG = \"1\";",
+    1,
+)
+source = source.replace('printf("', 'GGML_LOG_INFO("')
+source = source.replace('fprintf(stderr, "', 'GGML_LOG_ERROR("')
+path.write_text(source)
+PY
+    fi
 fi
 
 if grep -q '#include <filesystem>' "$SOURCE_ROOT/ggml/src/ggml-backend-reg.cpp" 2>/dev/null \

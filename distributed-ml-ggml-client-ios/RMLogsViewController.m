@@ -68,8 +68,8 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
     self.logTextView = [[UITextView alloc] init];
     self.logTextView.editable = NO;
     self.logTextView.selectable = YES;
-    self.logTextView.backgroundColor = [UIColor blackColor];
-    self.logTextView.textColor = [UIColor colorWithRed:0.2 green:0.9 blue:0.3 alpha:1.0];
+    self.logTextView.backgroundColor = [UIColor whiteColor];
+    self.logTextView.textColor = [UIColor colorWithRed:0.05 green:0.45 blue:0.18 alpha:1.0];
     self.logTextView.font = [UIFont fontWithName:@"Menlo-Regular" size:12.0] ?: [UIFont systemFontOfSize:12.0];
     self.logTextView.textContainerInset = UIEdgeInsetsMake(12, 12, 12, 12);
     self.logTextView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -201,7 +201,7 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
     if ([line containsString:@"[STORAGE]"]) {
         return RMLogCategoryStorage;
     }
-    if ([line containsString:@"[RPC SERVER]"]) {
+    if ([line containsString:@"[RPC SERVER]"] || [line containsString:@"[GGML]"]) {
         return RMLogCategoryRPC;
     }
     return RMLogCategoryGeneral;

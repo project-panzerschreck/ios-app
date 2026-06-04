@@ -13,7 +13,10 @@
 // usable for local testing.
 
 #import "LlamaBridge.h"
+#import "Diagnostics/AppDiagnostics.h"
+#import "RMAppLogger.h"
 #include <TargetConditionals.h>
+#include <stdarg.h>
 #include <dlfcn.h>
 #include <mach/mach.h>
 
@@ -41,6 +44,42 @@
   #define GGML_RPC_AVAILABLE 1
 #else
   #define GGML_RPC_AVAILABLE 0
+#endif
+
+#if LLAMA_AVAILABLE
+static void llama_bridge_ggml_log_callback(enum ggml_log_level level, const char *text, void *user_data) {
+    (void)user_data;
+    if (text == NULL || text[0] == '\0') {
+        return;
+    }
+
+    NSString *levelName = @"INFO";
+    switch (level) {
+        case GGML_LOG_LEVEL_DEBUG:
+            levelName = @"DEBUG";
+            break;
+        case GGML_LOG_LEVEL_WARN:
+            levelName = @"WARN";
+            break;
+        case GGML_LOG_LEVEL_ERROR:
+            levelName = @"ERROR";
+            break;
+        case GGML_LOG_LEVEL_INFO:
+        case GGML_LOG_LEVEL_CONT:
+        default:
+            levelName = @"INFO";
+            break;
+    }
+
+    NSString *message = [[[NSString alloc] initWithUTF8String:text]
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (message.length == 0) {
+        return;
+    }
+
+    [AppDiagnostics logWithLevel:levelName tag:@"RPC SERVER" message:message];
+    NSLog(@"[GGML][%@] %@", levelName, message);
+}
 #endif
 
 #if GGML_RPC_AVAILABLE
@@ -546,6 +585,18 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 
 // ── GGML RPC server ──────────────────────────────────────────────────────────
 
++ (void)installGgmlLogging {
+#if LLAMA_AVAILABLE
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        ggml_log_set(llama_bridge_ggml_log_callback, NULL);
+        [RMAppLogger logWithTag:@"RPC SERVER" message:@"ggml.verbose_logging enabled (ggml_log_set -> Logs tab)"];
+    });
+#else
+    [RMAppLogger logWithLevel:@"WARN" tag:@"RPC SERVER" message:@"ggml logging unavailable (llama/ggml not linked)"];
+#endif
+}
+
 + (BOOL)rpcAvailable {
     return GGML_RPC_AVAILABLE;
 }
@@ -573,6 +624,8 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     NSLog(@"[LlamaBridge] RPC server not available – rebuild with GGML_RPC=ON (see scripts/build-ggml-ios.sh)");
     return;
 #else
+    [LlamaBridge installGgmlLogging];
+
     // Look up the device handle directly — do NOT call ggml_backend_*_init() here.
     // ggml_backend_rpc_start_server() calls ggml_backend_dev_init() internally, so
     // calling init() ourselves first and then freeing causes a double-init: the
@@ -591,13 +644,24 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
         dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
     }
     if (!dev) {
-        NSLog(@"[LlamaBridge] No GGML backend device found, cannot start RPC server.");
+        [RMAppLogger logWithLevel:@"ERROR" tag:@"RPC SERVER" message:@"rpc.start.failed reason=no_backend_device"];
         return;
     }
 
     const char *ep   = endpoint.UTF8String;
     const char *cdir = cacheDir ? cacheDir.UTF8String : nullptr;
+    const char *devName = ggml_backend_dev_name(dev);
+    const char *devDescription = ggml_backend_dev_description(dev);
 
+    [RMAppLogger logWithTag:@"RPC SERVER" message:[NSString stringWithFormat:
+        @"rpc.server.enter endpoint=%@ threads=%lu cache=%@ free_mb=%lu total_mb=%lu device=%@ (%@)",
+        endpoint,
+        (unsigned long)threads,
+        cacheDir ?: @"disabled",
+        (unsigned long)freeMB,
+        (unsigned long)totalMB,
+        devName ? [NSString stringWithUTF8String:devName] : @"unknown",
+        devDescription ? [NSString stringWithUTF8String:devDescription] : @"unknown"]];
     NSLog(@"[LlamaBridge] Starting GGML RPC server at %@ with %lu threads…", endpoint, (unsigned long)threads);
     // Blocks until the server is stopped externally (process kill or socket close).
 #if defined(RPC_PROTO_MAJOR_VERSION)
@@ -613,6 +677,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     ggml_backend_rpc_start_server(backend, ep, cdir, freeBytes, totalBytes);
     ggml_backend_free(backend);
 #endif
+    [RMAppLogger logWithTag:@"RPC SERVER" message:[NSString stringWithFormat:@"rpc.server.exit endpoint=%@", endpoint]];
     NSLog(@"[LlamaBridge] GGML RPC server stopped.");
 #endif
 }

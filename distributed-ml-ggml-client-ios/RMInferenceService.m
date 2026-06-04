@@ -43,7 +43,10 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 @property (nonatomic, assign) NSUInteger supervisorGeneration;
 @property (nonatomic, assign) BOOL rpcWorkerActive;
 @property (nonatomic, copy) NSString *currentRPCEndpoint;
+@property (nonatomic, copy) NSString *currentStorageEndpoint;
 @property (nonatomic, copy) NSString *lastRuntimeError;
+@property (nonatomic, assign) NSInteger consecutiveRPCProbeFailures;
+@property (nonatomic, assign) NSInteger consecutiveStorageProbeFailures;
 @property (nonatomic, strong) NSDate *lastRPCStartAt;
 @property (nonatomic, strong) NSDate *lastStorageStartAt;
 @property (nonatomic, assign) BOOL rpcHealthy;
@@ -282,8 +285,36 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
                                  nickname:(NSString *)nickname
                                    threads:(NSInteger)threads
                                  deviceId:(NSString *)deviceId {
-    if (self.nodeShouldBeRunning) {
+    NSString *trimmedHost = [[coordinatorHost ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (trimmedHost.length == 0) {
+        [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"node.start.rejected reason=missing_coordinator_host"];
         return;
+    }
+
+    NSInteger resolvedPort = coordinatorPort;
+    if (resolvedPort <= 0) {
+        resolvedPort = [RMRpcSettings sharedSettings].clusterServerPort;
+        if (resolvedPort <= 0) {
+            resolvedPort = 4917;
+        }
+    }
+
+    NSInteger resolvedThreads = MAX(1, threads);
+    NSString *resolvedNickname = nickname ?: @"";
+    NSString *resolvedDeviceId = deviceId ?: @"";
+
+    BOOL sameConfig = self.nodeShouldBeRunning
+        && [trimmedHost isEqualToString:self.desiredCoordinatorHost]
+        && resolvedPort == self.desiredCoordinatorPort
+        && resolvedThreads == self.desiredThreads
+        && [resolvedNickname isEqualToString:self.desiredNickname ?: @""]
+        && [resolvedDeviceId isEqualToString:self.desiredDeviceId ?: @""];
+    if (sameConfig) {
+        return;
+    }
+
+    if (self.nodeShouldBeRunning) {
+        [self stopNodeRuntimePreservingDesiredConfig:NO reason:@"Reconnecting with updated coordinator"];
     }
 
     if (![LlamaBridge rpcAvailable]) {
@@ -296,11 +327,11 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         return;
     }
 
-    self.desiredCoordinatorHost = [[coordinatorHost ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
-    self.desiredCoordinatorPort = coordinatorPort;
-    self.desiredNickname = nickname ?: @"";
-    self.desiredThreads = MAX(1, threads);
-    self.desiredDeviceId = deviceId ?: @"";
+    self.desiredCoordinatorHost = trimmedHost;
+    self.desiredCoordinatorPort = resolvedPort;
+    self.desiredNickname = resolvedNickname;
+    self.desiredThreads = resolvedThreads;
+    self.desiredDeviceId = resolvedDeviceId;
     self.nodeShouldBeRunning = YES;
     self.lastRuntimeError = @"";
 
@@ -426,7 +457,8 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     BOOL started = [self.storageServer startOnPort:storagePort];
     if (started) {
         self.lastStorageStartAt = [NSDate date];
-        [RMAppLogger logWithTag:@"STORAGE" message:[NSString stringWithFormat:@"storage.runtime.started port=%ld", (long)storagePort]];
+        self.currentStorageEndpoint = [NSString stringWithFormat:@"127.0.0.1:%ld", (long)storagePort];
+        [RMAppLogger logWithTag:@"STORAGE" message:[NSString stringWithFormat:@"storage.runtime.started endpoint=%@ port=%ld", self.currentStorageEndpoint, (long)storagePort]];
     } else {
         self.storageServer = nil;
         self.lastRuntimeError = [NSString stringWithFormat:@"Storage failed to bind port %ld", (long)storagePort];
@@ -438,6 +470,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
 - (void)stopStorageServer {
     [self.storageServer stop];
     self.storageServer = nil;
+    self.currentStorageEndpoint = @"";
 }
 
 - (void)restartStorageServer {
@@ -525,69 +558,118 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
     [self postUpdate];
 }
 
+- (BOOL)shouldSkipStorageHealthProbe {
+    return self.storageServer.isBusy;
+}
+
+- (BOOL)isRPCWorkerHealthy {
+    return self.rpcWorkerActive;
+}
+
+- (void)updateProbeFailureCountersWithRPCProbe:(BOOL)rpcProbe
+                                 storageProbe:(BOOL)storageProbe
+                               rpcWithinGrace:(BOOL)rpcWithinGrace
+                           storageWithinGrace:(BOOL)storageWithinGrace {
+    if (self.storageServer == nil) {
+        self.consecutiveStorageProbeFailures = 0;
+    } else if (storageProbe || storageWithinGrace) {
+        self.consecutiveStorageProbeFailures = 0;
+    } else {
+        self.consecutiveStorageProbeFailures += 1;
+    }
+
+    if (!self.rpcWorkerActive) {
+        self.consecutiveRPCProbeFailures = 0;
+    } else if (rpcProbe || rpcWithinGrace) {
+        self.consecutiveRPCProbeFailures = 0;
+    } else {
+        self.consecutiveRPCProbeFailures += 1;
+    }
+}
+
 - (NSTimeInterval)runNodeSupervisorIteration {
+    static const NSInteger kHealthCheckFailureThreshold = 3;
+
     if (!self.nodeShouldBeRunning || !self.appIsActive) {
         [self publishRuntimeHealthWithStatusOverride:[self currentRuntimeStatusName]];
         return 10.0;
     }
 
     [self applyKeepAwakePolicy];
-    if (![self startStorageServerIfNeeded]) {
-        self.storageHealthy = NO;
-        self.announceEligible = NO;
-        self.discoveryActive = NO;
-        [self notifyOnMain:^{
-            self.rpcServerState = RMRPCServerStateRecovering;
-            self.rpcStatusMessage = self.lastRuntimeError.length > 0 ? self.lastRuntimeError : @"Storage server unhealthy";
-        }];
-        [self publishRuntimeHealthWithStatusOverride:@"recovering"];
-        return 2.0;
-    }
-
-    BOOL storageProbe = [self storageHealthProbe];
-    if (!storageProbe) {
-        self.storageHealthy = NO;
-        self.announceEligible = NO;
-        self.discoveryActive = NO;
-        self.lastRuntimeError = @"Storage server unhealthy";
-        [self notifyOnMain:^{
-            self.rpcServerState = RMRPCServerStateRecovering;
-            self.rpcStatusMessage = self.lastRuntimeError;
-        }];
-        [self publishRuntimeHealthWithStatusOverride:@"recovering"];
-        BOOL storageWithinGrace = self.lastStorageStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastStorageStartAt] < 2.0;
-        if (!storageWithinGrace) {
-            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.storage_unhealthy action=restart_storage announce=skipped"];
-            [self restartStorageServer];
-        }
-        return 2.0;
-    }
+    (void)[self startStorageServerIfNeeded];
 
     if (!self.rpcWorkerActive) {
         [self startRPCWorker];
     }
 
-    BOOL rpcProbe = [self.class probeTCPHost:@"127.0.0.1" port:[RMRpcSettings listenPort] timeout:1.5];
+    BOOL skipStorageHealthProbe = [self shouldSkipStorageHealthProbe];
+    BOOL rpcProbe = [self isRPCWorkerHealthy];
+    BOOL storageProbe = skipStorageHealthProbe ? YES : [self storageHealthProbe];
     BOOL rpcWithinGrace = self.lastRPCStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastRPCStartAt] < 2.0;
-    BOOL effectiveRPCHealthy = rpcProbe || (self.rpcWorkerActive && rpcWithinGrace);
+    BOOL storageWithinGrace = self.lastStorageStartAt != nil && [[NSDate date] timeIntervalSinceDate:self.lastStorageStartAt] < 2.0;
 
-    self.rpcHealthy = effectiveRPCHealthy;
-    self.storageHealthy = YES;
-    self.announceEligible = self.rpcHealthy;
+    [self updateProbeFailureCountersWithRPCProbe:rpcProbe
+                                  storageProbe:storageProbe
+                                rpcWithinGrace:rpcWithinGrace
+                            storageWithinGrace:storageWithinGrace];
 
-    if (!self.rpcHealthy) {
+    BOOL storageStable = storageProbe
+        || storageWithinGrace
+        || self.consecutiveStorageProbeFailures < kHealthCheckFailureThreshold;
+    BOOL rpcStable = rpcProbe
+        || rpcWithinGrace
+        || self.consecutiveRPCProbeFailures < kHealthCheckFailureThreshold;
+
+    self.storageHealthy = self.storageServer != nil && storageStable;
+    self.rpcHealthy = self.rpcWorkerActive && rpcStable;
+    self.announceEligible = self.rpcHealthy && self.storageHealthy;
+
+    BOOL storageNeedsRestart = self.storageServer != nil
+        && !storageWithinGrace
+        && self.consecutiveStorageProbeFailures >= kHealthCheckFailureThreshold;
+    BOOL rpcNeedsRestart = self.rpcWorkerActive
+        && !rpcWithinGrace
+        && self.consecutiveRPCProbeFailures >= kHealthCheckFailureThreshold;
+
+    [RMAppLogger logWithLevel:@"DEBUG" tag:@"GENERAL" message:[NSString stringWithFormat:
+        @"health.check rpc_probe=%@ storage_probe=%@ storage_probe_skipped=%@ rpc_grace=%@ storage_grace=%@ rpc_failures=%ld storage_failures=%ld rpc_healthy=%@ storage_healthy=%@ announce_eligible=%@",
+        rpcProbe ? @"YES" : @"NO",
+        storageProbe ? @"YES" : @"NO",
+        skipStorageHealthProbe ? @"YES" : @"NO",
+        rpcWithinGrace ? @"YES" : @"NO",
+        storageWithinGrace ? @"YES" : @"NO",
+        (long)self.consecutiveRPCProbeFailures,
+        (long)self.consecutiveStorageProbeFailures,
+        self.rpcHealthy ? @"YES" : @"NO",
+        self.storageHealthy ? @"YES" : @"NO",
+        self.announceEligible ? @"YES" : @"NO"]];
+
+    if (storageNeedsRestart) {
         self.discoveryActive = NO;
-        self.lastRuntimeError = @"RPC worker unhealthy";
+        self.lastRuntimeError = [NSString stringWithFormat:@"Storage server unhealthy (%ld probe failures)", (long)self.consecutiveStorageProbeFailures];
         [self notifyOnMain:^{
             self.rpcServerState = RMRPCServerStateRecovering;
             self.rpcStatusMessage = self.lastRuntimeError;
         }];
         [self publishRuntimeHealthWithStatusOverride:@"recovering"];
-        if (!rpcWithinGrace) {
-            [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:@"health.rpc_unhealthy action=restart_rpc announce=skipped"];
-            [self stopRPCWorkerWithReason:self.lastRuntimeError];
-            [self startRPCWorker];
-        }
+        [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:[NSString stringWithFormat:@"health.storage_unhealthy action=restart_storage announce=skipped failures=%ld", (long)self.consecutiveStorageProbeFailures]];
+        self.consecutiveStorageProbeFailures = 0;
+        [self restartStorageServer];
+        return 2.0;
+    }
+
+    if (rpcNeedsRestart) {
+        self.discoveryActive = NO;
+        self.lastRuntimeError = [NSString stringWithFormat:@"RPC worker unhealthy (%ld probe failures)", (long)self.consecutiveRPCProbeFailures];
+        [self notifyOnMain:^{
+            self.rpcServerState = RMRPCServerStateRecovering;
+            self.rpcStatusMessage = self.lastRuntimeError;
+        }];
+        [self publishRuntimeHealthWithStatusOverride:@"recovering"];
+        [RMAppLogger logWithLevel:@"WARN" tag:@"GENERAL" message:[NSString stringWithFormat:@"health.rpc_unhealthy action=restart_rpc announce=skipped failures=%ld", (long)self.consecutiveRPCProbeFailures]];
+        self.consecutiveRPCProbeFailures = 0;
+        [self stopRPCWorkerWithReason:self.lastRuntimeError];
+        [self startRPCWorker];
         return 2.0;
     }
 
@@ -740,6 +822,7 @@ NSString * const RMInferenceServiceDidUpdateNotification = @"RMInferenceServiceD
         : @"";
     [RMAppLogger rpcHealthWithStatus:status details:@{
         @"endpoint": self.currentRPCEndpoint ?: @"",
+        @"storage_endpoint": self.currentStorageEndpoint ?: @"",
         @"coordinator": coordinator,
         @"last_error": self.lastRuntimeError ?: @"",
         @"rpc_available": @([LlamaBridge rpcAvailable]),

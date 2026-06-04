@@ -80,14 +80,30 @@ ios-app/
 llama.cpp-rpc/    # git@github.com:rmcluster/llama.cpp-rpc.git @ iphone-5-build
 ```
 
-Rebuild with:
+From the repo root:
 
 ```sh
-cd ../llama.cpp-rpc && git fetch origin && git checkout iphone-5-build
-cd - && bash scripts/build-ggml-ios10-armv7.sh
+bash scripts/build-ggml-ios10-armv7.sh
 ```
 
-This script uses the legacy toolchain and iOS 10.3 SDK to populate:
+### Verbose RPC logging (rebuild required)
+
+RPC trace lines appear in the app **Logs** tab only when `libggml-rpc.a` is built with
+`GGML_RPC_VERBOSE=1`. Setting `GGML_RPC_DEBUG=1` at runtime does **not** work on iOS
+(the library reads that env var at load time).
+
+```sh
+export GGML_RPC_VERBOSE=1
+# Optional: rebuild only libggml-rpc.a (faster when iterating on RPC logging):
+export RPC_ONLY_REBUILD=1
+bash scripts/build-ggml-ios10-armv7.sh
+```
+
+GitHub Actions (`.github/workflows/iphone-5.yml`) sets `GGML_RPC_VERBOSE=1` and
+`RPC_ONLY_REBUILD=1` on the native rebuild step. That workflow expects the same legacy
+toolchain and iOS 10.3 SDK on the runner (stock hosted runners do not include them).
+
+Expected output:
 
 ```text
 armv7-rebuild-ios10/lib/
@@ -112,16 +128,17 @@ Build:
 make clean ipa
 ```
 
+Or use the release-style name:
+
+```sh
+bash scripts/build-iphone5-ipa.sh packages/rmclusternode-5-unsigned.ipa
+```
+
 Output:
 
 ```text
 packages/rmclusternode_1.0.0_unsigned.ipa
-```
-
-For convenience, copy it to the release-style name:
-
-```sh
-cp packages/rmclusternode_1.0.0_unsigned.ipa packages/rmclusternode-5-unsigned.ipa
+packages/rmclusternode-5-unsigned.ipa   # copy from build-iphone5-ipa.sh
 ```
 
 ## 3. Verify the artifact

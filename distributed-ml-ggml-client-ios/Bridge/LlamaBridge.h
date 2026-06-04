@@ -134,6 +134,9 @@ typedef void (^LlamaShardCallback)(NSData *hiddenState,
 /// Requires ggml-rpc.xcframework linked in the Xcode target.
 + (BOOL)rpcAvailable;
 
+/// Routes ggml/ggml-rpc log output into App Diagnostics (Logs tab).
++ (void)installGgmlLogging;
+
 /// Returns YES if the device supports the Metal features required by llama.cpp.
 + (BOOL)metalAvailable;
 

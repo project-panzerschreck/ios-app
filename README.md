@@ -225,6 +225,20 @@ The legacy native rebuild script is:
 bash scripts/build-ggml-ios10-armv7.sh
 ```
 
+Use `rmcluster/llama.cpp-rpc` on branch **`iphone-5-build`** (see [BUILDING.md](BUILDING.md)).
+
+### Verbose RPC logging
+
+To route ggml-rpc `printf` traces into the app **Logs** tab, rebuild with verbose RPC enabled.
+`GGML_RPC_DEBUG=1` at runtime does not work on iOS (the env var is read when the library loads).
+
+```sh
+export GGML_RPC_VERBOSE=1
+export RPC_ONLY_REBUILD=1   # optional: only rebuild libggml-rpc.a
+bash scripts/build-ggml-ios10-armv7.sh
+make ipa
+```
+
 What it does:
 
 - builds into `armv7-rebuild-ios10/`
@@ -535,8 +549,21 @@ If you change ggml / llama native code or anything in the legacy native rebuild 
 
 ```sh
 make clean
+export GGML_RPC_VERBOSE=1    # if you need RPC trace lines in Logs
 bash scripts/build-ggml-ios10-armv7.sh
 make ipa
+```
+
+Convenience copy for sideloading:
+
+```sh
+cp packages/rmclusternode_1.0.0_unsigned.ipa packages/rmclusternode-5-unsigned.ipa
+```
+
+Or:
+
+```sh
+bash scripts/build-iphone5-ipa.sh packages/rmclusternode-5-unsigned.ipa
 ```
 
 ## 14. Files worth knowing
@@ -548,7 +575,16 @@ make ipa
   Debian/Theos package metadata.
 
 - [scripts/build-ggml-ios10-armv7.sh](scripts/build-ggml-ios10-armv7.sh)  
-  Separate iOS 10 armv7 native rebuild.
+  Separate iOS 10 armv7 native rebuild (`GGML_RPC_VERBOSE=1` for RPC Logs tab traces).
+
+- [scripts/build-iphone5-ipa.sh](scripts/build-iphone5-ipa.sh)  
+  Theos IPA build plus `packages/rmclusternode-5-unsigned.ipa` copy.
+
+- [.github/workflows/iphone-5.yml](.github/workflows/iphone-5.yml)  
+  CI: native rebuild with `GGML_RPC_VERBOSE=1` (requires legacy toolchain on the runner).
+
+- [BUILDING.md](BUILDING.md)  
+  Short iphone-5 build guide.
 
 - [scripts/legacy-link.sh](scripts/legacy-link.sh)  
   Forces the legacy linker path for final app linking.

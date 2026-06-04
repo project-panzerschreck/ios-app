@@ -1,0 +1,66 @@
+name: iphone-5
+
+on:
+  push:
+    branches: [iphone-5]
+  pull_request:
+    branches: [iphone-5]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout llama.cpp-rpc
+        uses: actions/checkout@v4
+        with:
+          repository: rmcluster/llama.cpp-rpc
+          ref: iphone-5-build
+          path: llama.cpp-rpc
+
+      - name: Install dependencies
+        run: brew install cmake ldid
+
+      - name: Install Theos
+        run: |
+          git clone --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+
+      - name: Verify legacy toolchain and iOS 10.3 SDK
+        run: |
+          LEGACY="${LEGACY_TOOLCHAIN_BIN:-$HOME/ios-legacy-toolchain/bin}"
+          SDK="${IOS10_SDK_ROOT:-$HOME/theos/sdks/iPhoneOS10.3.sdk}"
+          test -x "$LEGACY/clang" || {
+            echo "::error::iphone-5 CI needs the legacy Apple toolchain at ~/ios-legacy-toolchain (see BUILDING.md). Stock GitHub-hosted runners do not include it."
+            exit 1
+          }
+          test -d "$SDK" || {
+            echo "::error::iphone-5 CI needs iPhoneOS10.3.sdk under ~/theos/sdks (see README.md)."
+            exit 1
+          }
+
+      - name: Build iOS 10 armv7 libs (verbose RPC logging)
+        env:
+          THEOS: ${{ env.HOME }}/theos
+          IOS10_SDK_ROOT: ${{ env.HOME }}/theos/sdks/iPhoneOS10.3.sdk
+          LEGACY_TOOLCHAIN_BIN: ${{ env.HOME }}/ios-legacy-toolchain/bin
+          LEGACY_TOOLCHAIN_LIBCXX: ${{ env.HOME }}/ios-legacy-toolchain/include/c++/v1
+          LLAMA_DIR: ${{ github.workspace }}/llama.cpp-rpc
+          GGML_RPC_VERBOSE: "1"
+          RPC_ONLY_REBUILD: "1"
+        run: bash scripts/build-ggml-ios10-armv7.sh
+
+      - name: Build unsigned IPA
+        env:
+          THEOS: ${{ env.HOME }}/theos
+          IOS10_SDK_ROOT: ${{ env.HOME }}/theos/sdks/iPhoneOS10.3.sdk
+          LEGACY_TOOLCHAIN_BIN: ${{ env.HOME }}/ios-legacy-toolchain/bin
+          LEGACY_TOOLCHAIN_LIBCXX: ${{ env.HOME }}/ios-legacy-toolchain/include/c++/v1
+        run: bash scripts/build-iphone5-ipa.sh packages/rmclusternode-5-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmclusternode-5-unsigned
+          path: packages/rmclusternode-5-unsigned.ipa
