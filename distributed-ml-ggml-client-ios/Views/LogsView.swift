@@ -43,18 +43,10 @@ struct LogsView: View {
     }
 
     private var verboseLoggingToggle: some View {
-        Toggle(isOn: $settings.verboseRPCLogging) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Verbose RPC / GGML logs")
-                    .font(.subheadline.weight(.semibold))
-                Text("Shows ggml-rpc wire debug, client connect/disconnect, and cache events in this panel. Disconnect and reconnect after changing.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(panelBackground)
+        Toggle("Verbose RPC / GGML logs", isOn: $settings.verboseRPCLogging)
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(panelBackground)
     }
 
     private var categoryFilters: some View {
