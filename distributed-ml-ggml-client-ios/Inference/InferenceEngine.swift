@@ -13,7 +13,6 @@
 
 import Foundation
 import Combine
-import Network
 import Darwin
 #if canImport(UIKit)
 import UIKit
@@ -87,7 +86,8 @@ final class InferenceEngine: ObservableObject {
     private let rpcServerLogTag = "RPC SERVER"
     private let storageLogTag = "STORAGE"
     private let healthCheckTimeout: TimeInterval = 1.5
-    private let recoveryBackoffNs: UInt64 = 2_000_000_000
+    private let healthCheckInterval: TimeInterval = 10.0
+    private let healthCheckFailureThreshold = 3
     private let startupGraceInterval: TimeInterval = 2.0
     private let defaultAnnounceInterval: Double = 10.0
 
@@ -104,6 +104,8 @@ final class InferenceEngine: ObservableObject {
     private var lastRuntimeError = ""
     private var lastRPCStartAt: Date?
     private var lastStorageStartAt: Date?
+    private var consecutiveRPCProbeFailures = 0
+    private var consecutiveStorageProbeFailures = 0
 
     static let shared = InferenceEngine()
 
@@ -362,7 +364,8 @@ final class InferenceEngine: ObservableObject {
                 guard let self else { return }
                 let interval = await self.runNodeSupervisorIteration()
                 do {
-                    try await Task.sleep(nanoseconds: UInt64(max(interval, 0.5) * 1_000_000_000))
+                    let sleepSec = max(interval, healthCheckInterval, 0.5)
+                    try await Task.sleep(nanoseconds: UInt64(sleepSec * 1_000_000_000))
                 } catch {
                     break
                 }
@@ -381,6 +384,8 @@ final class InferenceEngine: ObservableObject {
         storageHealthy = false
         announceEligible = false
         discoveryActive = false
+        consecutiveRPCProbeFailures = 0
+        consecutiveStorageProbeFailures = 0
 
         if preserveDesiredConfig {
             rpcServerState = .degraded(reason: reason)
@@ -412,6 +417,7 @@ final class InferenceEngine: ObservableObject {
             storageServer = server
             currentStorageEndpoint = "127.0.0.1:\(RpcSettings.storagePort)"
             lastStorageStartAt = Date()
+            consecutiveStorageProbeFailures = 0
             AppLogger.log(tag: storageLogTag, "storage.runtime.started endpoint=\(currentStorageEndpoint)")
         } else {
             lastRuntimeError = "Storage failed to bind port \(RpcSettings.storagePort)"
@@ -446,6 +452,7 @@ final class InferenceEngine: ObservableObject {
         }
 
         runtimeIsShuttingDown = false
+        consecutiveRPCProbeFailures = 0
         currentRPCEndpoint = "\(RpcSettings.listenHost):\(RpcSettings.listenPort)"
         lastRPCStartAt = Date()
         let endpoint = currentRPCEndpoint
@@ -514,9 +521,20 @@ final class InferenceEngine: ObservableObject {
         publishRuntimeHealth(statusOverride: expected ? currentRuntimeStatusName() : "recovering")
     }
 
-    private func isRPCHealthy() async -> Bool {
-        guard rpcServerTask != nil else { return false }
-        return await Self.probeTCP(host: "127.0.0.1", port: RpcSettings.listenPort, timeout: healthCheckTimeout)
+    private func isLocalInferenceBusy() -> Bool {
+        if case .generating = modelState { return true }
+        return false
+    }
+
+    private func shouldSkipStorageHealthProbe() -> Bool {
+        storageServer?.isBusy ?? false
+    }
+
+    /// RPC liveness is the supervisor task only. TCP connect probes are omitted:
+    /// ggml-rpc serves one client at a time and does not accept new connections
+    /// while inference is running, so a port check would falsely mark a busy worker unhealthy.
+    private func isRPCHealthy() -> Bool {
+        rpcServerTask != nil
     }
 
     private func isStorageHealthy() async -> Bool {
@@ -535,6 +553,29 @@ final class InferenceEngine: ObservableObject {
         }
     }
 
+    private func updateProbeFailureCounters(
+        rpcProbe: Bool,
+        storageProbe: Bool,
+        rpcWithinGrace: Bool,
+        storageWithinGrace: Bool
+    ) {
+        if storageServer == nil {
+            consecutiveStorageProbeFailures = 0
+        } else if storageProbe || storageWithinGrace {
+            consecutiveStorageProbeFailures = 0
+        } else {
+            consecutiveStorageProbeFailures += 1
+        }
+
+        if rpcServerTask == nil {
+            consecutiveRPCProbeFailures = 0
+        } else if rpcProbe || rpcWithinGrace {
+            consecutiveRPCProbeFailures = 0
+        } else {
+            consecutiveRPCProbeFailures += 1
+        }
+    }
+
     private func runNodeSupervisorIteration() async -> Double {
         guard nodeShouldBeRunning, appIsActive, let config = desiredNodeConfig else {
             publishRuntimeHealth(statusOverride: currentRuntimeStatusName())
@@ -547,40 +588,63 @@ final class InferenceEngine: ObservableObject {
             startRPCWorker(config)
         }
 
-        let rpcProbe = await isRPCHealthy()
-        let storageProbe = await isStorageHealthy()
+        let skipStorageHealthProbe = shouldSkipStorageHealthProbe()
+        let rpcProbe = isRPCHealthy()
+        let storageProbe = skipStorageHealthProbe ? true : await isStorageHealthy()
         let rpcWithinGrace = lastRPCStartAt.map { Date().timeIntervalSince($0) < startupGraceInterval } ?? false
         let storageWithinGrace = lastStorageStartAt.map { Date().timeIntervalSince($0) < startupGraceInterval } ?? false
-        let effectiveRPCHealthy = rpcProbe || (rpcServerTask != nil && rpcWithinGrace)
-        let effectiveStorageHealthy = storageProbe || (storageServer != nil && storageWithinGrace)
 
-        rpcHealthy = effectiveRPCHealthy
-        storageHealthy = effectiveStorageHealthy
+        updateProbeFailureCounters(
+            rpcProbe: rpcProbe,
+            storageProbe: storageProbe,
+            rpcWithinGrace: rpcWithinGrace,
+            storageWithinGrace: storageWithinGrace
+        )
+
+        let storageStable = storageProbe
+            || storageWithinGrace
+            || consecutiveStorageProbeFailures < healthCheckFailureThreshold
+        let rpcStable = rpcProbe
+            || rpcWithinGrace
+            || consecutiveRPCProbeFailures < healthCheckFailureThreshold
+
+        storageHealthy = storageServer != nil && storageStable
+        rpcHealthy = rpcServerTask != nil && rpcStable
         announceEligible = rpcHealthy && storageHealthy
-        AppLogger.log("DEBUG", tag: generalLogTag, "health.check rpc_probe=\(rpcProbe) storage_probe=\(storageProbe) rpc_grace=\(rpcWithinGrace) storage_grace=\(storageWithinGrace) rpc_healthy=\(rpcHealthy) storage_healthy=\(storageHealthy) announce_eligible=\(announceEligible)")
 
-        if !storageHealthy {
+        let storageNeedsRestart = storageServer != nil
+            && !storageWithinGrace
+            && consecutiveStorageProbeFailures >= healthCheckFailureThreshold
+        let rpcNeedsRestart = rpcServerTask != nil
+            && !rpcWithinGrace
+            && consecutiveRPCProbeFailures >= healthCheckFailureThreshold
+
+        AppLogger.log(
+            "DEBUG",
+            tag: generalLogTag,
+            "health.check rpc_probe=\(rpcProbe) storage_probe=\(storageProbe) storage_probe_skipped=\(skipStorageHealthProbe) rpc_grace=\(rpcWithinGrace) storage_grace=\(storageWithinGrace) rpc_failures=\(consecutiveRPCProbeFailures) storage_failures=\(consecutiveStorageProbeFailures) rpc_healthy=\(rpcHealthy) storage_healthy=\(storageHealthy) announce_eligible=\(announceEligible)"
+        )
+
+        if storageNeedsRestart {
             stopDiscoveryLoop()
-            lastRuntimeError = "Storage server unhealthy"
+            lastRuntimeError = "Storage server unhealthy (\(consecutiveStorageProbeFailures) probe failures)"
             rpcServerState = .recovering(reason: lastRuntimeError)
             publishRuntimeHealth(statusOverride: "recovering")
-            if !storageWithinGrace {
-                AppLogger.log("WARN", tag: generalLogTag, "health.storage_unhealthy action=restart_storage announce=skipped")
-                restartStorageServer()
-            }
-            return Double(recoveryBackoffNs) / 1_000_000_000
+            AppLogger.log("WARN", tag: generalLogTag, "health.storage_unhealthy action=restart_storage announce=skipped failures=\(consecutiveStorageProbeFailures)")
+            consecutiveStorageProbeFailures = 0
+            restartStorageServer()
+            return healthCheckInterval
         }
 
-        if !rpcHealthy {
+        if rpcNeedsRestart {
             stopDiscoveryLoop()
-            lastRuntimeError = "RPC worker unhealthy"
+            lastRuntimeError = "RPC worker unhealthy (\(consecutiveRPCProbeFailures) probe failures)"
             rpcServerState = .recovering(reason: lastRuntimeError)
             publishRuntimeHealth(statusOverride: "recovering")
-            if !rpcWithinGrace {
-                AppLogger.log("WARN", tag: generalLogTag, "health.rpc_unhealthy action=restart_rpc announce=skipped")
-                restartRPCWorker(config, reason: lastRuntimeError)
-            }
-            return Double(recoveryBackoffNs) / 1_000_000_000
+            AppLogger.log("WARN", tag: generalLogTag, "health.rpc_unhealthy action=restart_rpc announce=skipped failures=\(consecutiveRPCProbeFailures)")
+            consecutiveRPCProbeFailures = 0
+            restartRPCWorker(config, reason: lastRuntimeError)
+            return healthCheckInterval
         }
 
         rpcServerState = .running(endpoint: currentRPCEndpoint)
@@ -685,7 +749,9 @@ final class InferenceEngine: ObservableObject {
             "discovery_active": discoveryActive,
             "rpc_healthy": rpcHealthy,
             "storage_healthy": storageHealthy,
-            "announce_eligible": announceEligible
+            "announce_eligible": announceEligible,
+            "storage_busy": shouldSkipStorageHealthProbe(),
+            "local_inference_busy": isLocalInferenceBusy()
         ])
     }
 
@@ -716,28 +782,11 @@ final class InferenceEngine: ObservableObject {
     }
 
     private nonisolated static func primaryIPv4Address() -> String {
-        let monitor = NWPathMonitor()
-        let primaryInterfaceName = monitor.currentPath.availableInterfaces.first?.name
-
-        var ifAddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifAddr) == 0, let first = ifAddr else { return "0.0.0.0" }
-        defer { freeifaddrs(first) }
-
-        return sequence(first: first, next: { $0.pointee.ifa_next })
-            .compactMap { node -> String? in
-                let ifa = node.pointee
-                guard ifa.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { return nil }
-
-                let name = String(cString: ifa.ifa_name)
-                if name == primaryInterfaceName || (primaryInterfaceName == nil && name != "lo0") {
-                    var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    getnameinfo(ifa.ifa_addr, socklen_t(ifa.ifa_addr.pointee.sa_len),
-                                &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST)
-                    return String(cString: host)
-                }
-                return nil
-            }
-            .first ?? "0.0.0.0"
+        let interfaces = LocalInterface.allIPv4()
+        if let wifi = interfaces.first(where: { $0.id == "en0" }) {
+            return wifi.ip
+        }
+        return interfaces.first?.ip ?? "0.0.0.0"
     }
 
     private nonisolated static func thermalStateTemperature(_ state: ProcessInfo.ThermalState) -> Double {
@@ -747,39 +796,6 @@ final class InferenceEngine: ObservableObject {
         case .serious:  return 45.0
         case .critical: return 55.0
         @unknown default: return Double.nan
-        }
-    }
-
-    private nonisolated static func probeTCP(host: String, port: Int, timeout: TimeInterval) async -> Bool {
-        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return false }
-
-        return await withCheckedContinuation { continuation in
-            let queue = DispatchQueue(label: "InferenceEngine.probeTCP")
-            let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
-            var completed = false
-
-            @Sendable func finish(_ result: Bool) {
-                guard !completed else { return }
-                completed = true
-                connection.cancel()
-                continuation.resume(returning: result)
-            }
-
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    finish(true)
-                case .failed(_), .cancelled:
-                    finish(false)
-                default:
-                    break
-                }
-            }
-
-            connection.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + timeout) {
-                finish(false)
-            }
         }
     }
 
