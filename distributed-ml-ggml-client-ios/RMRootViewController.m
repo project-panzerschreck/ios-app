@@ -567,10 +567,6 @@
     [self refreshEndpointsSection];
     self.rpcStatusLabel.text = self.service.rpcStatusMessage ?: @"";
     self.rpcStatusLabel.textColor = [UIColor grayColor];
-    NSString *trimmedHost = [[self.serverHostField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
-    NSString *trimmedConnection = [[self.connectionStringField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
-    BOOL canConnect = trimmedHost.length > 0 || trimmedConnection.length > 0;
-
     switch (self.service.rpcServerState) {
         case RMRPCServerStateStarting:
         case RMRPCServerStateRecovering:
@@ -594,7 +590,7 @@
             [self applyProminentButton:self.rpcStartStopButton
                                  title:@"Connect to cluster"
                        backgroundColor:[self rmSystemBlueColor]
-                               enabled:canConnect];
+                               enabled:YES];
             break;
     }
 
@@ -860,17 +856,7 @@
 }
 
 - (void)coordinatorFieldsChanged:(id)sender {
-    if (self.service.rpcServerState == RMRPCServerStateIdle
-        || self.service.rpcServerState == RMRPCServerStateUnavailable
-        || self.service.rpcServerState == RMRPCServerStateDegraded) {
-        NSString *trimmedHost = [[self.serverHostField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
-        NSString *trimmedConnection = [[self.connectionStringField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
-        BOOL canConnect = trimmedHost.length > 0 || trimmedConnection.length > 0;
-        [self applyProminentButton:self.rpcStartStopButton
-                             title:@"Connect to cluster"
-                   backgroundColor:[self rmSystemBlueColor]
-                           enabled:canConnect];
-    }
+    (void)sender;
 }
 
 - (void)threadStepperChanged:(UIStepper *)sender {
