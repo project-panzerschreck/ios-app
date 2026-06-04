@@ -47,9 +47,11 @@
 #endif
 
 #if LLAMA_AVAILABLE
+static BOOL gRMVerboseRPCLogging = NO;
+
 static void llama_bridge_ggml_log_callback(enum ggml_log_level level, const char *text, void *user_data) {
     (void)user_data;
-    if (text == NULL || text[0] == '\0') {
+    if (!gRMVerboseRPCLogging || text == NULL || text[0] == '\0') {
         return;
     }
 
@@ -77,7 +79,7 @@ static void llama_bridge_ggml_log_callback(enum ggml_log_level level, const char
         return;
     }
 
-    [AppDiagnostics logWithLevel:levelName tag:@"RPC SERVER" message:message];
+    [AppDiagnostics logWithLevel:levelName tag:@"GGML" message:message];
     NSLog(@"[GGML][%@] %@", levelName, message);
 }
 #endif
@@ -585,16 +587,28 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 
 // ── GGML RPC server ──────────────────────────────────────────────────────────
 
-+ (void)installGgmlLogging {
++ (void)configureRPCLoggingVerbose:(BOOL)verbose {
+    gRMVerboseRPCLogging = verbose;
+
 #if LLAMA_AVAILABLE
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         ggml_log_set(llama_bridge_ggml_log_callback, NULL);
-        [RMAppLogger logWithTag:@"RPC SERVER" message:@"ggml.verbose_logging enabled (ggml_log_set -> Logs tab)"];
     });
-#else
-    [RMAppLogger logWithLevel:@"WARN" tag:@"RPC SERVER" message:@"ggml logging unavailable (llama/ggml not linked)"];
 #endif
+
+    if (verbose) {
+        setenv("GGML_RPC_DEBUG", "1", 1);
+    } else {
+        unsetenv("GGML_RPC_DEBUG");
+    }
+
+    [RMAppLogger logWithLevel:@"INFO"
+                          tag:@"RPC SERVER"
+                      message:verbose
+        ? @"rpc.logging.verbose_enabled (GGML + RPC wire debug; reconnect RPC to apply)"
+        : @"rpc.logging.verbose_disabled"];
+    NSLog(@"[LlamaBridge] RPC verbose logging %@", verbose ? @"ON" : @"OFF");
 }
 
 + (BOOL)rpcAvailable {
@@ -624,7 +638,7 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     NSLog(@"[LlamaBridge] RPC server not available – rebuild with GGML_RPC=ON (see scripts/build-ggml-ios.sh)");
     return;
 #else
-    [LlamaBridge installGgmlLogging];
+    [LlamaBridge configureRPCLoggingVerbose:gRMVerboseRPCLogging];
 
     // Look up the device handle directly — do NOT call ggml_backend_*_init() here.
     // ggml_backend_rpc_start_server() calls ggml_backend_dev_init() internally, so
@@ -654,12 +668,13 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     const char *devDescription = ggml_backend_dev_description(dev);
 
     [RMAppLogger logWithTag:@"RPC SERVER" message:[NSString stringWithFormat:
-        @"rpc.server.enter endpoint=%@ threads=%lu cache=%@ free_mb=%lu total_mb=%lu device=%@ (%@)",
+        @"rpc.server.enter endpoint=%@ threads=%lu cache=%@ free_mb=%lu total_mb=%lu verbose=%@ device=%@ (%@)",
         endpoint,
         (unsigned long)threads,
         cacheDir ?: @"disabled",
         (unsigned long)freeMB,
         (unsigned long)totalMB,
+        gRMVerboseRPCLogging ? @"YES" : @"NO",
         devName ? [NSString stringWithUTF8String:devName] : @"unknown",
         devDescription ? [NSString stringWithUTF8String:devDescription] : @"unknown"]];
     NSLog(@"[LlamaBridge] Starting GGML RPC server at %@ with %lu threads…", endpoint, (unsigned long)threads);

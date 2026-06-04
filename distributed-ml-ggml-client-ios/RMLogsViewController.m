@@ -1,5 +1,6 @@
 #import "RMLogsViewController.h"
 #import "Diagnostics/AppDiagnostics.h"
+#import "RMRpcSettings.h"
 
 typedef NS_ENUM(NSInteger, RMLogCategory) {
     RMLogCategoryRPC = 0,
@@ -10,6 +11,8 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
 @interface RMLogsViewController () <UITextViewDelegate>
 
 @property (nonatomic, strong) UILabel *healthLabel;
+@property (nonatomic, strong) UILabel *verboseLabel;
+@property (nonatomic, strong) UISwitch *verboseSwitch;
 @property (nonatomic, strong) UIScrollView *filterScrollView;
 @property (nonatomic, strong) UIStackView *filterStack;
 @property (nonatomic, strong) UIButton *rpcFilterButton;
@@ -20,6 +23,7 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
 
 @property (nonatomic, strong) NSMutableIndexSet *activeFilters;
 @property (nonatomic, assign) BOOL autoScrollEnabled;
+@property (nonatomic, strong) RMRpcSettings *settings;
 
 @end
 
@@ -29,6 +33,7 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor whiteColor];
     self.title = @"Logs";
+    self.settings = [RMRpcSettings sharedSettings];
     self.activeFilters = [NSMutableIndexSet indexSet];
     [self.activeFilters addIndex:RMLogCategoryRPC];
     [self.activeFilters addIndex:RMLogCategoryStorage];
@@ -40,6 +45,18 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
     self.healthLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     self.healthLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.healthLabel];
+
+    self.verboseLabel = [[UILabel alloc] init];
+    self.verboseLabel.text = @"Verbose RPC / GGML logs";
+    self.verboseLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    self.verboseLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.verboseLabel];
+
+    self.verboseSwitch = [[UISwitch alloc] init];
+    self.verboseSwitch.on = self.settings.isVerboseRPCLoggingEnabled;
+    [self.verboseSwitch addTarget:self action:@selector(verboseSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    self.verboseSwitch.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.verboseSwitch];
 
     self.filterScrollView = [[UIScrollView alloc] init];
     self.filterScrollView.showsHorizontalScrollIndicator = NO;
@@ -84,7 +101,12 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
         [self.healthLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
         [self.healthLabel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
 
-        [self.filterScrollView.topAnchor constraintEqualToAnchor:self.healthLabel.bottomAnchor constant:10.0],
+        [self.verboseLabel.topAnchor constraintEqualToAnchor:self.healthLabel.bottomAnchor constant:10.0],
+        [self.verboseLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
+        [self.verboseSwitch.centerYAnchor constraintEqualToAnchor:self.verboseLabel.centerYAnchor],
+        [self.verboseSwitch.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
+
+        [self.filterScrollView.topAnchor constraintEqualToAnchor:self.verboseLabel.bottomAnchor constant:10.0],
         [self.filterScrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.filterScrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [self.filterScrollView.heightAnchor constraintEqualToConstant:44.0],
@@ -205,6 +227,10 @@ typedef NS_ENUM(NSInteger, RMLogCategory) {
         return RMLogCategoryRPC;
     }
     return RMLogCategoryGeneral;
+}
+
+- (void)verboseSwitchChanged:(UISwitch *)sender {
+    self.settings.verboseRPCLogging = sender.isOn;
 }
 
 - (NSString *)filteredLogsText {

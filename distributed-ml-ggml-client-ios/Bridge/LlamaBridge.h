@@ -130,12 +130,12 @@ typedef void (^LlamaShardCallback)(NSData *hiddenState,
 //
 // Requires the ggml-rpc.xcframework (rebuild with GGML_RPC=ON; see build-ggml-ios.sh).
 
-/// Returns YES if the GGML RPC backend was compiled into this build.
-/// Requires ggml-rpc.xcframework linked in the Xcode target.
-+ (BOOL)rpcAvailable;
+/// When verbose is YES, registers ggml_log_set and sets GGML_RPC_DEBUG.
+/// Call before starting the RPC worker; reconnect after changing verbose at runtime.
++ (void)configureRPCLoggingVerbose:(BOOL)verbose;
 
-/// Routes ggml/ggml-rpc log output into App Diagnostics (Logs tab).
-+ (void)installGgmlLogging;
+/// Returns YES if the GGML RPC backend was compiled into this build.
++ (BOOL)rpcAvailable;
 
 /// Returns YES if the device supports the Metal features required by llama.cpp.
 + (BOOL)metalAvailable;

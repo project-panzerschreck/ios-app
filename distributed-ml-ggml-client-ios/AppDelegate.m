@@ -1,14 +1,14 @@
 #import "AppDelegate.h"
-#import "Bridge/LlamaBridge.h"
 #import "RMInferenceService.h"
 #import "RMRootViewController.h"
+#import "RMRpcSettings.h"
 
 NSString * const RMOpenURLNotification = @"RMOpenURLNotification";
 
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    [LlamaBridge installGgmlLogging];
+    [RMRpcSettings sharedSettings];
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     RMRootViewController *rootViewController = [[RMRootViewController alloc] init];
     self.window.rootViewController = rootViewController;

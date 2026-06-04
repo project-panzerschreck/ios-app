@@ -76,6 +76,10 @@ rmclusternode_CCFLAGS = \
 	-Idistributed-ml-ggml-client-ios \
 	-I$(ARMV7_VENDOR_DIR)/include \
 	-I$(ARMV7_VENDOR_DIR)/ggml/include
+ifeq ($(VERBOSE_RPC),1)
+rmclusternode_CFLAGS += -DVERBOSE_RPC_DEFAULT=1
+rmclusternode_CCFLAGS += -DVERBOSE_RPC_DEFAULT=1
+endif
 rmclusternode_LDFLAGS += \
 	$(IOS10_SDK_LIB_DIR)/libSystem.tbd \
 	$(IOS10_SDK_LIB_DIR)/libgcc_s.1.tbd \
