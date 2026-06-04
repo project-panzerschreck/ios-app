@@ -159,7 +159,7 @@ The RMCluster Node tab runs a background **supervisor** (`RMInferenceService`) t
 
 ### Logs
 
-The **Logs** tab shows in-app diagnostics (`RMAppLogger` / `AppDiagnostics`). Useful tags: `GENERAL` (`health.check`, `health.storage_unhealthy`), `STORAGE`, `RPC SERVER`.
+The **Logs** tab shows in-app diagnostics (`RMAppLogger` / `AppDiagnostics`), keeping the **most recent 100 lines** in memory to limit RAM use. Useful tags: `GENERAL` (`health.check`, `health.storage_unhealthy`), `STORAGE`, `RPC SERVER`, `GGML`.
 
 ### Device log capture
 
