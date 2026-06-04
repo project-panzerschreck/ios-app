@@ -34,15 +34,18 @@
 @property (nonatomic, strong) UILabel *temperatureValueLabel;
 @property (nonatomic, strong) UISlider *temperatureSlider;
 
-@property (nonatomic, strong) UITextView *endpointsTextView;
+@property (nonatomic, assign) BOOL endpointsExpanded;
+@property (nonatomic, strong) UIStackView *endpointsStack;
+@property (nonatomic, strong) UIButton *endpointsHeaderButton;
+@property (nonatomic, strong) UILabel *endpointsChevronLabel;
 @property (nonatomic, strong) UITextField *connectionStringField;
 @property (nonatomic, strong) UITextField *nicknameField;
 @property (nonatomic, strong) UITextField *serverHostField;
 @property (nonatomic, strong) UITextField *serverPortField;
 @property (nonatomic, strong) UITextField *threadCountField;
-@property (nonatomic, strong) UIStepper *serverPortStepper;
 @property (nonatomic, strong) UIStepper *threadCountStepper;
 @property (nonatomic, strong) UILabel *importStatusLabel;
+@property (nonatomic, strong) UIButton *scanQRButton;
 @property (nonatomic, strong) UIButton *rpcStartStopButton;
 @property (nonatomic, strong) UILabel *rpcStatusLabel;
 
@@ -57,6 +60,7 @@
     self.service = [RMInferenceService sharedService];
     self.settings = [RMRpcSettings sharedSettings];
     self.contextLength = 1024;
+    self.endpointsExpanded = NO;
     self.view.backgroundColor = [UIColor whiteColor];
     [self buildUI];
     [self loadSettingsIntoFields];
@@ -277,40 +281,51 @@
 }
 
 - (void)buildRPCPane {
-    UILabel *nodeNameTitle = [[UILabel alloc] init];
-    nodeNameTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    nodeNameTitle.text = @"Node Name (Optional)";
-    [self.rpcPane addArrangedSubview:nodeNameTitle];
+    self.nicknameField = [self textFieldWithPlaceholder:@"Node Name (Optional)"];
+    self.connectionStringField = [self textFieldWithPlaceholder:@"Paste rmcluster:// connection URL"];
+    self.serverHostField = [self textFieldWithPlaceholder:@"Server IP or host"];
+    self.serverPortField = [self textFieldWithPlaceholder:nil];
+    self.serverPortField.keyboardType = UIKeyboardTypeNumberPad;
+    self.threadCountField = [self numericField];
+    [self.serverHostField addTarget:self action:@selector(coordinatorFieldsChanged:) forControlEvents:UIControlEventEditingChanged];
+    [self.connectionStringField addTarget:self action:@selector(coordinatorFieldsChanged:) forControlEvents:UIControlEventEditingChanged];
 
-    self.nicknameField = [self textFieldWithPlaceholder:@"e.g. John's iPhone"];
     [self.rpcPane addArrangedSubview:self.nicknameField];
 
-    UILabel *endpointTitle = [[UILabel alloc] init];
-    endpointTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    endpointTitle.text = @"Endpoints";
-    [self.rpcPane addArrangedSubview:endpointTitle];
+    self.endpointsStack = [self verticalStack];
+    self.endpointsStack.hidden = YES;
 
-    self.endpointsTextView = [[UITextView alloc] init];
-    self.endpointsTextView.editable = NO;
-    self.endpointsTextView.scrollEnabled = NO;
-    self.endpointsTextView.layer.cornerRadius = 8.0;
-    self.endpointsTextView.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1.0];
-    self.endpointsTextView.font = [UIFont fontWithName:@"Menlo-Regular" size:13.0] ?: [UIFont systemFontOfSize:13.0];
-    self.endpointsTextView.textContainerInset = UIEdgeInsetsMake(12, 10, 12, 10);
-    [self.endpointsTextView.heightAnchor constraintGreaterThanOrEqualToConstant:120.0].active = YES;
-    [self.rpcPane addArrangedSubview:self.endpointsTextView];
+    self.endpointsHeaderButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.endpointsHeaderButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    [self.endpointsHeaderButton setTitle:@"Endpoints" forState:UIControlStateNormal];
+    self.endpointsHeaderButton.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    [self.endpointsHeaderButton setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [self.endpointsHeaderButton addTarget:self action:@selector(toggleEndpointsSection) forControlEvents:UIControlEventTouchUpInside];
+
+    UIStackView *endpointsHeaderRow = [[UIStackView alloc] init];
+    endpointsHeaderRow.axis = UILayoutConstraintAxisHorizontal;
+    endpointsHeaderRow.alignment = UIStackViewAlignmentCenter;
+    endpointsHeaderRow.spacing = 8.0;
+    [endpointsHeaderRow addArrangedSubview:self.endpointsHeaderButton];
+    self.endpointsChevronLabel = [[UILabel alloc] init];
+    self.endpointsChevronLabel.font = [UIFont boldSystemFontOfSize:15.0];
+    self.endpointsChevronLabel.text = @">";
+    [endpointsHeaderRow addArrangedSubview:self.endpointsChevronLabel];
+    UIView *headerSpacer = [[UIView alloc] init];
+    [headerSpacer setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+    [endpointsHeaderRow addArrangedSubview:headerSpacer];
+    [self.rpcPane addArrangedSubview:endpointsHeaderRow];
+    [self.rpcPane addArrangedSubview:self.endpointsStack];
 
     UILabel *connectionTitle = [[UILabel alloc] init];
     connectionTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     connectionTitle.text = @"Connection";
     [self.rpcPane addArrangedSubview:connectionTitle];
 
-    UIButton *scanQRButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [scanQRButton setTitle:@"Scan QR code" forState:UIControlStateNormal];
-    [scanQRButton addTarget:self action:@selector(scanQRTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.rpcPane addArrangedSubview:scanQRButton];
+    self.scanQRButton = [self listRowActionButtonWithTitle:@"Scan QR code"];
+    [self.scanQRButton addTarget:self action:@selector(scanQRTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.rpcPane addArrangedSubview:self.scanQRButton];
 
-    self.connectionStringField = [self textFieldWithPlaceholder:@"Paste connection string or rmcluster:// URL"];
     [self.rpcPane addArrangedSubview:self.connectionStringField];
 
     self.importStatusLabel = [[UILabel alloc] init];
@@ -324,26 +339,79 @@
     coordinatorTitle.text = @"Coordinator";
     [self.rpcPane addArrangedSubview:coordinatorTitle];
 
-    self.serverHostField = [self textFieldWithPlaceholder:@"Server IP or host"];
-    self.serverPortField = [self numericField];
-    self.threadCountField = [self numericField];
     [self.rpcPane addArrangedSubview:self.serverHostField];
-    self.serverPortStepper = [[UIStepper alloc] init];
-    [self.serverPortStepper addTarget:self action:@selector(serverPortStepperChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Server port" field:self.serverPortField stepper:self.serverPortStepper]];
+    [self.rpcPane addArrangedSubview:[self labeledFieldRowWithTitle:@"Server port" field:self.serverPortField]];
 
     self.threadCountStepper = [[UIStepper alloc] init];
     [self.threadCountStepper addTarget:self action:@selector(threadStepperChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"Thread count" field:self.threadCountField stepper:self.threadCountStepper]];
+    [self.rpcPane addArrangedSubview:[self numericRowWithTitle:@"# Threads" field:self.threadCountField stepper:self.threadCountStepper]];
+
+    UILabel *footer = [[UILabel alloc] init];
+    footer.numberOfLines = 0;
+    footer.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+    footer.textColor = [UIColor grayColor];
+    footer.text = @"Paste a rmcluster://connect URL, scan a QR code, or type the coordinator server IP, port, and token below.";
+    [self.rpcPane addArrangedSubview:footer];
 
     self.rpcStatusLabel = [[UILabel alloc] init];
     self.rpcStatusLabel.numberOfLines = 0;
     self.rpcStatusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
     [self.rpcPane addArrangedSubview:self.rpcStatusLabel];
 
-    self.rpcStartStopButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.rpcStartStopButton = [self prominentActionButtonWithTitle:@"Connect to cluster" backgroundColor:[self rmSystemBlueColor]];
     [self.rpcStartStopButton addTarget:self action:@selector(rpcStartStopTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.rpcPane addArrangedSubview:self.rpcStartStopButton];
+}
+
+- (UIColor *)rmSystemBlueColor {
+    return [UIColor colorWithRed:0.0 green:0.478 blue:1.0 alpha:1.0];
+}
+
+- (UIColor *)rmDestructiveRedColor {
+    return [UIColor colorWithRed:1.0 green:0.231 blue:0.188 alpha:1.0];
+}
+
+- (UIColor *)rmWarningOrangeColor {
+    return [UIColor colorWithRed:1.0 green:0.584 blue:0.0 alpha:1.0];
+}
+
+- (UIButton *)prominentActionButtonWithTitle:(NSString *)title backgroundColor:(UIColor *)backgroundColor {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    [button setTitle:title forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont boldSystemFontOfSize:17.0];
+    [button setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [button setTitleColor:[[UIColor whiteColor] colorWithAlphaComponent:0.6] forState:UIControlStateDisabled];
+    button.backgroundColor = backgroundColor;
+    button.layer.cornerRadius = 10.0;
+    button.layer.masksToBounds = YES;
+    button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentCenter;
+    button.contentEdgeInsets = UIEdgeInsetsMake(14.0, 16.0, 14.0, 16.0);
+    button.translatesAutoresizingMaskIntoConstraints = NO;
+    [button.heightAnchor constraintGreaterThanOrEqualToConstant:44.0].active = YES;
+    return button;
+}
+
+- (UIButton *)listRowActionButtonWithTitle:(NSString *)title {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    [button setTitle:title forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont systemFontOfSize:17.0];
+    [button setTitleColor:[self rmSystemBlueColor] forState:UIControlStateNormal];
+    button.backgroundColor = [UIColor colorWithWhite:0.96 alpha:1.0];
+    button.layer.cornerRadius = 10.0;
+    button.layer.borderWidth = 1.0 / [UIScreen mainScreen].scale;
+    button.layer.borderColor = [UIColor colorWithWhite:0.82 alpha:1.0].CGColor;
+    button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    button.contentEdgeInsets = UIEdgeInsetsMake(12.0, 16.0, 12.0, 16.0);
+    button.translatesAutoresizingMaskIntoConstraints = NO;
+    [button.heightAnchor constraintGreaterThanOrEqualToConstant:44.0].active = YES;
+    return button;
+}
+
+- (void)applyProminentButton:(UIButton *)button title:(NSString *)title backgroundColor:(UIColor *)backgroundColor enabled:(BOOL)enabled {
+    [button setTitle:title forState:UIControlStateNormal];
+    button.backgroundColor = backgroundColor;
+    button.enabled = enabled;
+    button.alpha = enabled ? 1.0 : 0.45;
 }
 
 - (UITextField *)textFieldWithPlaceholder:(NSString *)placeholder {
@@ -366,9 +434,11 @@
     row.axis = UILayoutConstraintAxisHorizontal;
     row.spacing = 10.0;
     row.alignment = UIStackViewAlignmentCenter;
+    row.distribution = UIStackViewDistributionFillEqually;
     UILabel *label = [[UILabel alloc] init];
     label.text = title;
-    [field.widthAnchor constraintEqualToConstant:180.0].active = YES;
+    label.adjustsFontSizeToFitWidth = YES;
+    label.minimumScaleFactor = 0.8;
     [row addArrangedSubview:label];
     [row addArrangedSubview:field];
     return row;
@@ -399,7 +469,6 @@
     self.nicknameField.text = self.settings.nickname ?: @"";
     self.serverHostField.text = coordinatorHost ?: @"";
     self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)coordinatorPort];
-    self.serverPortStepper.value = coordinatorPort;
     self.threadCountField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.threads];
     self.threadCountStepper.minimumValue = 1;
     self.threadCountStepper.maximumValue = 64;
@@ -495,52 +564,141 @@
         self.tokensPerSecondLabel.text = @"";
     }
 
-    [self updateEndpointsText];
+    [self refreshEndpointsSection];
     self.rpcStatusLabel.text = self.service.rpcStatusMessage ?: @"";
+    self.rpcStatusLabel.textColor = [UIColor grayColor];
+    NSString *trimmedHost = [[self.serverHostField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    NSString *trimmedConnection = [[self.connectionStringField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    BOOL canConnect = trimmedHost.length > 0 || trimmedConnection.length > 0;
+
     switch (self.service.rpcServerState) {
         case RMRPCServerStateStarting:
-            [self.rpcStartStopButton setTitle:@"Starting…" forState:UIControlStateNormal];
-            self.rpcStartStopButton.enabled = NO;
+        case RMRPCServerStateRecovering:
+            self.rpcStatusLabel.textColor = [self rmWarningOrangeColor];
+            [self applyProminentButton:self.rpcStartStopButton
+                                 title:@"Cancel connection"
+                       backgroundColor:[self rmWarningOrangeColor]
+                               enabled:YES];
             break;
         case RMRPCServerStateRunning:
-            [self.rpcStartStopButton setTitle:@"Disconnect" forState:UIControlStateNormal];
-            self.rpcStartStopButton.enabled = YES;
-            break;
-        case RMRPCServerStateRecovering:
-            [self.rpcStartStopButton setTitle:@"Recovering…" forState:UIControlStateNormal];
-            self.rpcStartStopButton.enabled = NO;
+            self.rpcStatusLabel.textColor = [UIColor colorWithRed:0.2 green:0.78 blue:0.35 alpha:1.0];
+            [self applyProminentButton:self.rpcStartStopButton
+                                 title:@"Disconnect from cluster"
+                       backgroundColor:[self rmDestructiveRedColor]
+                               enabled:YES];
             break;
         case RMRPCServerStateDegraded:
-            [self.rpcStartStopButton setTitle:@"Start RPC server" forState:UIControlStateNormal];
-            self.rpcStartStopButton.enabled = YES;
-            break;
         case RMRPCServerStateUnavailable:
-            [self.rpcStartStopButton setTitle:@"Start RPC server" forState:UIControlStateNormal];
-            self.rpcStartStopButton.enabled = YES;
-            break;
         default:
-            [self.rpcStartStopButton setTitle:@"Start RPC server" forState:UIControlStateNormal];
-            self.rpcStartStopButton.enabled = YES;
+            self.rpcStatusLabel.textColor = [UIColor grayColor];
+            [self applyProminentButton:self.rpcStartStopButton
+                                 title:@"Connect to cluster"
+                       backgroundColor:[self rmSystemBlueColor]
+                               enabled:canConnect];
             break;
     }
+
+    BOOL fieldsEditable = (self.service.rpcServerState == RMRPCServerStateIdle
+                           || self.service.rpcServerState == RMRPCServerStateUnavailable
+                           || self.service.rpcServerState == RMRPCServerStateDegraded);
+    self.nicknameField.enabled = fieldsEditable;
+    self.serverHostField.enabled = fieldsEditable;
+    self.serverPortField.enabled = fieldsEditable;
+    self.threadCountField.enabled = fieldsEditable;
+    self.threadCountStepper.enabled = fieldsEditable;
+    self.connectionStringField.enabled = fieldsEditable;
+    self.scanQRButton.enabled = fieldsEditable;
 }
 
-- (void)updateEndpointsText {
-    NSArray<RMLocalInterface *> *interfaces = [RMInferenceService allLocalIPv4Interfaces];
-    if (interfaces.count == 0) {
-        self.endpointsTextView.text = @"No network interfaces found";
+- (void)toggleEndpointsSection {
+    self.endpointsExpanded = !self.endpointsExpanded;
+    [self refreshEndpointsSection];
+}
+
+- (void)refreshEndpointsSection {
+    self.endpointsStack.hidden = !self.endpointsExpanded;
+
+    for (UIView *view in self.endpointsStack.arrangedSubviews) {
+        [self.endpointsStack removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+
+    self.endpointsChevronLabel.transform = self.endpointsExpanded
+        ? CGAffineTransformMakeRotation((CGFloat)(M_PI_2))
+        : CGAffineTransformIdentity;
+
+    if (!self.endpointsExpanded) {
         return;
     }
 
-    BOOL isRunning = (self.service.rpcServerState == RMRPCServerStateRunning || self.service.rpcServerState == RMRPCServerStateStarting);
-    NSMutableArray<NSString *> *lines = [NSMutableArray array];
-    for (RMLocalInterface *interface in interfaces) {
-        NSString *status = isRunning ? @"●" : @"○";
-        [lines addObject:[NSString stringWithFormat:@"%@ RPC %@", status, interface.ip]];
-        [lines addObject:interface.label ?: @""];
-        [lines addObject:@""];
+    NSArray<RMLocalInterface *> *interfaces = [RMInferenceService allLocalIPv4Interfaces];
+    if (interfaces.count == 0) {
+        UILabel *emptyLabel = [[UILabel alloc] init];
+        emptyLabel.text = @"No network interfaces found";
+        emptyLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+        emptyLabel.textColor = [UIColor grayColor];
+        [self.endpointsStack addArrangedSubview:emptyLabel];
+        return;
     }
-    self.endpointsTextView.text = [lines componentsJoinedByString:@"\n"];
+
+    BOOL isRunning = (self.service.rpcServerState == RMRPCServerStateRunning
+        || self.service.rpcServerState == RMRPCServerStateStarting);
+    NSInteger listenPort = [RMRpcSettings listenPort];
+
+    for (RMLocalInterface *interface in interfaces) {
+        UIStackView *row = [[UIStackView alloc] init];
+        row.axis = UILayoutConstraintAxisHorizontal;
+        row.spacing = 12.0;
+        row.alignment = UIStackViewAlignmentTop;
+
+        UIView *statusDot = [[UIView alloc] init];
+        statusDot.translatesAutoresizingMaskIntoConstraints = NO;
+        statusDot.backgroundColor = isRunning
+            ? [UIColor colorWithRed:0.2 green:0.78 blue:0.35 alpha:1.0]
+            : [UIColor colorWithWhite:0.75 alpha:1.0];
+        statusDot.layer.cornerRadius = 4.5;
+        [statusDot.widthAnchor constraintEqualToConstant:9.0].active = YES;
+        [statusDot.heightAnchor constraintEqualToConstant:9.0].active = YES;
+
+        UIStackView *textColumn = [self verticalStack];
+        textColumn.spacing = 2.0;
+        UILabel *rpcLabel = [[UILabel alloc] init];
+        rpcLabel.font = [UIFont fontWithName:@"Menlo-Bold" size:15.0] ?: [UIFont boldSystemFontOfSize:15.0];
+        rpcLabel.text = [NSString stringWithFormat:@"RPC %@", interface.ip];
+        UILabel *storageLabel = [[UILabel alloc] init];
+        storageLabel.font = [UIFont fontWithName:@"Menlo-Regular" size:12.0] ?: [UIFont systemFontOfSize:12.0];
+        storageLabel.textColor = [UIColor grayColor];
+        storageLabel.text = [NSString stringWithFormat:@"Storage %@", interface.ip];
+        UILabel *ifaceLabel = [[UILabel alloc] init];
+        ifaceLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+        ifaceLabel.textColor = [UIColor grayColor];
+        ifaceLabel.text = interface.label;
+        [textColumn addArrangedSubview:rpcLabel];
+        [textColumn addArrangedSubview:storageLabel];
+        if (interface.label.length > 0) {
+            [textColumn addArrangedSubview:ifaceLabel];
+        }
+
+        UIButton *copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [copyButton setTitle:@"Copy" forState:UIControlStateNormal];
+        copyButton.titleLabel.font = [UIFont systemFontOfSize:13.0];
+        NSString *copyValue = [NSString stringWithFormat:@"%@:%ld", interface.ip, (long)listenPort];
+        objc_setAssociatedObject(copyButton, @"copyValue", copyValue, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        [copyButton addTarget:self action:@selector(copyEndpointTapped:) forControlEvents:UIControlEventTouchUpInside];
+
+        [row addArrangedSubview:statusDot];
+        [row addArrangedSubview:textColumn];
+        [row addArrangedSubview:copyButton];
+        [self.endpointsStack addArrangedSubview:row];
+    }
+}
+
+- (void)copyEndpointTapped:(UIButton *)sender {
+    NSString *value = objc_getAssociatedObject(sender, @"copyValue");
+    if (value.length > 0) {
+        [UIPasteboard generalPasteboard].string = value;
+        self.importStatusLabel.text = @"Copied RPC endpoint to clipboard.";
+    }
 }
 
 - (void)updateTemperatureLabel {
@@ -688,7 +846,6 @@
     if (payload.port != nil) {
         self.settings.clusterServerPort = payload.port.integerValue;
         self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)self.settings.clusterServerPort];
-        self.serverPortStepper.value = self.settings.clusterServerPort;
     }
 
     if (payload.device.length > 0) {
@@ -702,8 +859,18 @@
     return YES;
 }
 
-- (void)serverPortStepperChanged:(UIStepper *)sender {
-    self.serverPortField.text = [NSString stringWithFormat:@"%ld", (long)sender.value];
+- (void)coordinatorFieldsChanged:(id)sender {
+    if (self.service.rpcServerState == RMRPCServerStateIdle
+        || self.service.rpcServerState == RMRPCServerStateUnavailable
+        || self.service.rpcServerState == RMRPCServerStateDegraded) {
+        NSString *trimmedHost = [[self.serverHostField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+        NSString *trimmedConnection = [[self.connectionStringField.text ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+        BOOL canConnect = trimmedHost.length > 0 || trimmedConnection.length > 0;
+        [self applyProminentButton:self.rpcStartStopButton
+                             title:@"Connect to cluster"
+                   backgroundColor:[self rmSystemBlueColor]
+                           enabled:canConnect];
+    }
 }
 
 - (void)threadStepperChanged:(UIStepper *)sender {
