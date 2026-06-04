@@ -1,4 +1,12 @@
-# Distributed Inference – Build & Run Guide
+# Distributed Inference iOS App
+
+This repository contains the source code for the Reused Mobile Devices iOS Node Application. The app allows you to connect iOS devices as compute nodes to the rmcluster backend.
+
+## iPhone 6s (iOS 14.7) branch
+
+The **`ios-14.7-6s`** branch targets **iPhone 6s / arm64 / iOS 14.7** and produces an unsigned IPA for sideloading. Use **[BUILDING.md](BUILDING.md)** on that branch for XCFramework, Xcode, and IPA steps (`IOS_MIN=12.0`, `llama.cpp-rpc` on **`iphone6-build`**). CI builds via [`.github/workflows/ios-14.7-6s.yml`](.github/workflows/ios-14.7-6s.yml).
+
+# Build & Run Guide
 
 Phones are **leaf/worker nodes only**. The Mac coordinator handles tokenization and sampling (CPU); all tensor compute runs on the phone(s) via GGML RPC.
 

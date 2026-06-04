@@ -37,7 +37,7 @@ struct LogsView: View {
             }
         }
         .padding()
-        .background(Color(uiColor: .systemBackground))
+        .background(panelBackground)
     }
 
     private var categoryFilters: some View {
@@ -54,10 +54,8 @@ struct LogsView: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background(
-                                isActive ? selectedFilterBackground : Color.secondary.opacity(0.12),
-                                in: Capsule()
-                            )
+                            .background(isActive ? selectedFilterBackground : Color.secondary.opacity(0.12))
+                            .clipShape(Capsule())
                             .foregroundColor(isActive ? selectedFilterForeground : Color.secondary)
                             .overlay(
                                 Capsule()
@@ -70,7 +68,11 @@ struct LogsView: View {
             .padding(.horizontal)
             .padding(.vertical, 10)
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(panelBackground)
+    }
+
+    private var panelBackground: Color {
+        colorScheme == .dark ? Color.black : Color.white
     }
 
     private var filteredLogsText: String {
@@ -180,7 +182,6 @@ private enum LogCategory: String, CaseIterable, Identifiable {
             return .rpc
         }
 
-        // Everything else, including [GENERAL] and legacy untagged lines, belongs in General.
         return .general
     }
 }

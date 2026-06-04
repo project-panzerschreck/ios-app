@@ -1,5 +1,7 @@
 # Building `ios-14.7-6s`
 
+This branch tracks **`main`** (UI, logging, recovery, tests) with an **iOS 14.7** deployment target for iPhone 6s. See [README.md](README.md) for coordinator / Mac `llama-cli` usage.
+
 This branch is the SwiftUI / Xcode build for:
 
 - `iPhone 6s`
@@ -92,30 +94,21 @@ ls -1 Frameworks
 
 You can build from Xcode, or from the command line.
 
-Command-line build:
+Command-line build and IPA packaging:
 
 ```sh
-xcodebuild \
-  -project distributed-ml-ggml-client-ios.xcodeproj \
-  -scheme distributed-ml-ggml-client-ios \
-  -configuration Release \
-  -sdk iphoneos \
-  -derivedDataPath DerivedData \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_IDENTITY= \
-  build
+bash scripts/build-ios-14-ipa.sh packages/rmclusternode-6s-unsigned.ipa
 ```
 
-The built app lands at:
+The script runs `xcodebuild` (unsigned) and writes:
 
 ```text
-DerivedData/Build/Products/Release-iphoneos/distributed-ml-ggml-client-ios.app
+packages/rmclusternode-6s-unsigned.ipa
 ```
 
-## 3. Package an unsigned IPA
+## 3. Package an unsigned IPA (manual)
 
-Create a plain unsigned IPA from the `.app` bundle:
+Equivalent to the script above:
 
 ```sh
 APP_DIR="DerivedData/Build/Products/Release-iphoneos/distributed-ml-ggml-client-ios.app"

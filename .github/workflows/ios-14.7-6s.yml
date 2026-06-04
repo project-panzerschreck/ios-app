@@ -1,0 +1,38 @@
+name: ios-14.7-6s
+
+on:
+  push:
+    branches: [ios-14.7-6s]
+  pull_request:
+    branches: [ios-14.7-6s]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout llama.cpp-rpc
+        uses: actions/checkout@v4
+        with:
+          repository: rmcluster/llama.cpp-rpc
+          ref: iphone6-build
+          path: llama.cpp-rpc
+
+      - name: Install dependencies
+        run: brew install cmake
+
+      - name: Build XCFrameworks
+        env:
+          LLAMA_DIR: ${{ github.workspace }}/llama.cpp-rpc
+        run: IOS_MIN=12.0 bash scripts/build-ggml-ios.sh
+
+      - name: Build unsigned IPA
+        run: bash scripts/build-ios-14-ipa.sh packages/rmclusternode-6s-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmclusternode-6s-unsigned
+          path: packages/rmclusternode-6s-unsigned.ipa

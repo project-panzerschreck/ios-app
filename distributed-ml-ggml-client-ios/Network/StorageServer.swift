@@ -52,6 +52,15 @@ final class StorageServer {
     private let queue = DispatchQueue(label: "StorageServer.queue")
     private var listener: NWListener?
     private var healthCache: StorageHealth?
+    private let activeRequestLock = NSLock()
+    private var activeRequestCount = 0
+
+    /// True while at least one HTTP request is being handled (chunk transfer, scan, etc.).
+    var isBusy: Bool {
+        activeRequestLock.lock()
+        defer { activeRequestLock.unlock() }
+        return activeRequestCount > 0
+    }
 
     init(storageDir: URL) {
         self.storageDir = storageDir
@@ -86,8 +95,16 @@ final class StorageServer {
     }
 
     private func handleConnection(_ connection: NWConnection) {
+        activeRequestLock.lock()
+        activeRequestCount += 1
+        activeRequestLock.unlock()
         connection.start(queue: queue)
         Task {
+            defer {
+                self.activeRequestLock.lock()
+                self.activeRequestCount -= 1
+                self.activeRequestLock.unlock()
+            }
             do {
                 try await handleConnectionAsync(connection)
             } catch {
