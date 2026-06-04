@@ -259,13 +259,9 @@ struct LocalInterface: Identifiable {
     let id: String      // interface name, e.g. "en0"
     let label: String   // e.g. "Wi-Fi", "Tailscale", "Cellular"
     let ip: String
-}
-
-extension ShardNetwork {
 
     /// All non-loopback IPv4 addresses on this device, sorted by priority.
-    /// Includes Wi-Fi, Hotspot, Cellular, Tailscale/VPN, and any other active interfaces.
-    static var allLocalIPv4s: [LocalInterface] {
+    static func allIPv4() -> [LocalInterface] {
         var ifAddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifAddr) == 0, let first = ifAddr else { return [] }
         defer { freeifaddrs(first) }
@@ -278,7 +274,6 @@ extension ShardNetwork {
             let ifa = node.pointee
             if ifa.ifa_addr.pointee.sa_family == UInt8(AF_INET) {
                 let name = String(cString: ifa.ifa_name)
-                // Skip loopback
                 guard name != "lo0", !seen.contains(name) else {
                     if let next = ifa.ifa_next { node = next; continue } else { break }
                 }
@@ -289,13 +284,12 @@ extension ShardNetwork {
                             nil, 0, NI_NUMERICHOST)
                 let ip = String(cString: host)
                 seen.insert(name)
-                results.append(LocalInterface(id: name, label: Self.label(for: name, ip: ip), ip: ip))
+                results.append(LocalInterface(id: name, label: interfaceLabel(name, ip: ip), ip: ip))
             }
             guard let next = ifa.ifa_next else { break }
             node = next
         }
 
-        // Sort: Wi-Fi first, then hotspot, then Tailscale/VPN, then cellular, then rest
         let order = ["en0", "bridge100", "utun", "pdp_ip0"]
         return results.sorted { a, b in
             let ai = order.firstIndex(where: { a.id.hasPrefix($0) }) ?? order.count
@@ -304,16 +298,12 @@ extension ShardNetwork {
         }
     }
 
-    /// The primary IPv4 (first in the sorted list), for backwards-compatible use.
-    static var wifiIPv4: String? { allLocalIPv4s.first?.ip }
-
-    private static func label(for interface: String, ip: String) -> String {
+    private static func interfaceLabel(_ interface: String, ip: String) -> String {
         switch true {
         case interface == "en0":              return "Wi-Fi"
         case interface == "bridge100":        return "Hotspot"
         case interface.hasPrefix("pdp_ip"):   return "Cellular"
         case interface.hasPrefix("utun"):
-            // Tailscale uses the 100.64.0.0/10 range (100.64.x.x – 100.127.x.x)
             if isTailscaleIP(ip) { return "Tailscale" }
             return "VPN"
         case interface.hasPrefix("en"):       return "Ethernet"
@@ -326,4 +316,13 @@ extension ShardNetwork {
         guard parts.count == 4, parts[0] == 100 else { return false }
         return parts[1] >= 64 && parts[1] <= 127
     }
+}
+
+extension ShardNetwork {
+
+    /// All non-loopback IPv4 addresses on this device, sorted by priority.
+    static var allLocalIPv4s: [LocalInterface] { LocalInterface.allIPv4() }
+
+    /// The primary IPv4 (first in the sorted list), for backwards-compatible use.
+    static var wifiIPv4: String? { allLocalIPv4s.first?.ip }
 }
