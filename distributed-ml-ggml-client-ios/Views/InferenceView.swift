@@ -428,12 +428,11 @@ struct InferenceView: View {
                 } label: {
                     Text("Connect to cluster")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(canStartRPCServer ? .white : .secondary)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(canStartRPCServer ? Color.accentColor : Color.gray.opacity(0.3))
+                        .background(Color.accentColor)
                 }
                 .buttonStyle(.plain)
-                .disabled(!canStartRPCServer)
                 .listRowInsets(EdgeInsets())
             }
         }
@@ -504,18 +503,23 @@ struct InferenceView: View {
         }
     }
 
-    private var canStartRPCServer: Bool {
-        let pendingConnection = !connectionString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasCoordinatorHost = !clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return pendingConnection || hasCoordinatorHost
-    }
-
     private func loadCoordinatorSettingsIfNeeded() {
-        guard !Self.didLoadCoordinatorSettings else { return }
-        Self.didLoadCoordinatorSettings = true
-        clusterServerHost = RpcSettings.loadClusterServerHost()
-        clusterServerPort = RpcSettings.loadClusterServerPort()
-        clusterToken = RpcSettings.loadClusterToken()
+        if !Self.didLoadCoordinatorSettings {
+            Self.didLoadCoordinatorSettings = true
+            clusterServerHost = RpcSettings.loadClusterServerHost()
+            clusterServerPort = RpcSettings.loadClusterServerPort()
+            clusterToken = RpcSettings.loadClusterToken()
+            return
+        }
+        if clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            clusterServerHost = RpcSettings.loadClusterServerHost()
+        }
+        if clusterServerPort <= 0 {
+            clusterServerPort = RpcSettings.loadClusterServerPort()
+        }
+        if clusterToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            clusterToken = RpcSettings.loadClusterToken()
+        }
     }
 
     private func persistCoordinatorSettings() {
