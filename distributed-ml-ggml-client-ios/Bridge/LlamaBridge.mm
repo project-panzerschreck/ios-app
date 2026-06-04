@@ -13,9 +13,15 @@
 // usable for local testing.
 
 #import "LlamaBridge.h"
+#import "../Diagnostics/AppDiagnostics.h"
 #import <Metal/Metal.h>
 #include <TargetConditionals.h>
 #include <os/proc.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <atomic>
+#include <string>
+#include <thread>
 
 // Pull in llama.cpp public API.  The header will be available once the
 // XCFramework is added to the target.  Guard it so the file can still
@@ -473,6 +479,144 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
 
 // ── GGML RPC server ──────────────────────────────────────────────────────────
 
+#if LLAMA_AVAILABLE
+static NSString *RMGgmlLogLevelName(enum ggml_log_level level) {
+    switch (level) {
+        case GGML_LOG_LEVEL_DEBUG: return @"DEBUG";
+        case GGML_LOG_LEVEL_INFO:  return @"INFO";
+        case GGML_LOG_LEVEL_WARN:  return @"WARN";
+        case GGML_LOG_LEVEL_ERROR: return @"ERROR";
+        case GGML_LOG_LEVEL_CONT:  return @"CONT";
+        default:                   return @"INFO";
+    }
+}
+
+static void RMGgmlLogCallback(enum ggml_log_level level, const char *text, void *user_data) {
+    (void)user_data;
+    if (text == nullptr) {
+        return;
+    }
+    NSString *message = [[NSString alloc] initWithUTF8String:text];
+    if (message.length == 0) {
+        return;
+    }
+    NSString *levelName = RMGgmlLogLevelName(level);
+    [AppDiagnostics logWithLevel:levelName tag:@"GGML" message:message];
+    NSLog(@"[GGML] %@: %@", levelName, message);
+}
+
+static void RMForwardRPCLibraryLines(const char *text) {
+    if (text == nullptr || text[0] == '\0') {
+        return;
+    }
+    NSString *chunk = [[NSString alloc] initWithUTF8String:text];
+    NSArray<NSString *> *parts = [chunk componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    for (NSString *part in parts) {
+        NSString *line = [part stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (line.length == 0) {
+            continue;
+        }
+        [AppDiagnostics logWithLevel:@"INFO" tag:@"GGML" message:line];
+        NSLog(@"[GGML] INFO: %@", line);
+    }
+}
+
+static void RMRunRPCServerCore(const char *endpoint,
+                               const char *cacheDir,
+                               size_t threads,
+                               ggml_backend_dev_t device) {
+    ggml_backend_dev_t devices[] = { device };
+    ggml_backend_rpc_start_server(endpoint, cacheDir, threads, 1, devices);
+}
+
+static void RMRunRPCServerWithOptionalStdoutForwarding(const char *endpoint,
+                                                       const char *cacheDir,
+                                                       size_t threads,
+                                                       ggml_backend_dev_t device) {
+    if (!gRMVerboseRPCLogging) {
+        RMRunRPCServerCore(endpoint, cacheDir, threads, device);
+        return;
+    }
+
+    int pipefd[2] = {-1, -1};
+    if (pipe(pipefd) != 0) {
+        RMRunRPCServerCore(endpoint, cacheDir, threads, device);
+        return;
+    }
+
+    int savedStdout = dup(STDOUT_FILENO);
+    if (savedStdout < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        RMRunRPCServerCore(endpoint, cacheDir, threads, device);
+        return;
+    }
+
+    dup2(pipefd[1], STDOUT_FILENO);
+    close(pipefd[1]);
+
+    std::atomic<bool> stopReader{false};
+    std::string pending;
+    std::thread reader([&]() {
+        char buffer[1024];
+        while (!stopReader.load()) {
+            ssize_t received = read(pipefd[0], buffer, sizeof(buffer) - 1);
+            if (received <= 0) {
+                break;
+            }
+            buffer[received] = '\0';
+            pending.append(buffer, (size_t)received);
+            size_t newline = 0;
+            while ((newline = pending.find('\n')) != std::string::npos) {
+                std::string line = pending.substr(0, newline);
+                pending.erase(0, newline + 1);
+                RMForwardRPCLibraryLines(line.c_str());
+            }
+        }
+        if (!pending.empty()) {
+            RMForwardRPCLibraryLines(pending.c_str());
+        }
+    });
+
+    RMRunRPCServerCore(endpoint, cacheDir, threads, device);
+
+    stopReader.store(true);
+    fflush(stdout);
+    dup2(savedStdout, STDOUT_FILENO);
+    close(savedStdout);
+    close(pipefd[0]);
+    if (reader.joinable()) {
+        reader.join();
+    }
+}
+#endif
+
+static BOOL gRMVerboseRPCLogging = NO;
+
++ (void)configureRPCLoggingVerbose:(BOOL)verbose {
+    gRMVerboseRPCLogging = verbose;
+
+#if LLAMA_AVAILABLE
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        ggml_log_set(RMGgmlLogCallback, NULL);
+    });
+#endif
+
+    if (verbose) {
+        setenv("GGML_RPC_DEBUG", "1", 1);
+    } else {
+        unsetenv("GGML_RPC_DEBUG");
+    }
+
+    [AppDiagnostics logWithLevel:@"INFO"
+                             tag:@"RPC SERVER"
+                         message:verbose
+        ? @"rpc.logging.verbose_enabled (GGML + RPC wire debug; reconnect RPC to apply)"
+        : @"rpc.logging.verbose_disabled"];
+    NSLog(@"[LlamaBridge] RPC verbose logging %@", verbose ? @"ON" : @"OFF");
+}
+
 + (BOOL)rpcAvailable {
     return GGML_RPC_AVAILABLE;
 }
@@ -522,9 +666,29 @@ typedef NS_ENUM(NSInteger, LlamaBridgeError) {
     const char *ep   = endpoint.UTF8String;
     const char *cdir = cacheDir ? cacheDir.UTF8String : nullptr;
 
-    NSLog(@"[LlamaBridge] Starting GGML RPC server at %@ with %lu threads…", endpoint, (unsigned long)threads);
+    const char *devName = ggml_backend_dev_name(dev);
+    const char *devDesc = ggml_backend_dev_description(dev);
+    size_t devFree = 0;
+    size_t devTotal = 0;
+    ggml_backend_dev_memory(dev, &devFree, &devTotal);
+
+    NSString *startupMessage = [NSString stringWithFormat:
+        @"rpc.ggml.starting endpoint=%@ threads=%lu cache=%@ device=%s (%s) mem_free_mb=%zu mem_total_mb=%zu verbose=%@",
+        endpoint,
+        (unsigned long)threads,
+        cacheDir ?: @"n/a",
+        devName ?: "?",
+        devDesc ?: "?",
+        devFree / 1024 / 1024,
+        devTotal / 1024 / 1024,
+        gRMVerboseRPCLogging ? @"YES" : @"NO"];
+    [AppDiagnostics logWithLevel:@"INFO" tag:@"GGML" message:startupMessage];
+    NSLog(@"[LlamaBridge] %@", startupMessage);
+
     // Blocks until the server is stopped externally (process kill or socket close).
-    ggml_backend_rpc_start_server(ep, cdir, (size_t)threads, 1, &dev);
+    RMRunRPCServerWithOptionalStdoutForwarding(ep, cdir, (size_t)threads, dev);
+
+    [AppDiagnostics logWithLevel:@"INFO" tag:@"GGML" message:@"rpc.ggml.stopped"];
     NSLog(@"[LlamaBridge] GGML RPC server stopped.");
 #endif
 }

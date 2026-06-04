@@ -460,7 +460,8 @@ final class InferenceEngine: ObservableObject {
         let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.path
         let threads = config.threads
         rpcServerState = .starting
-        AppLogger.log(tag: rpcServerLogTag, "rpc.start.begin endpoint=\(endpoint) threads=\(threads) cache=\(cacheDir ?? "disabled") free_mb=\(freeMB) total_mb=\(totalMB)")
+        LlamaBridge.configureRPCLoggingVerbose(RpcSettings.shared.verboseRPCLogging)
+        AppLogger.log(tag: rpcServerLogTag, "rpc.start.begin endpoint=\(endpoint) threads=\(threads) cache=\(cacheDir ?? "disabled") free_mb=\(freeMB) total_mb=\(totalMB) verbose=\(RpcSettings.shared.verboseRPCLogging)")
         if let cacheDir, !cacheDir.isEmpty {
             AppLogger.log(tag: rpcServerLogTag, "rpc.cache.enabled path=\(cacheDir)")
         } else {

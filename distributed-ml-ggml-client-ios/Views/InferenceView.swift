@@ -29,10 +29,11 @@ struct InferenceView: View {
     @State private var showDocPicker = false
     @State private var localModels: [URL] = []
 
-    // ── RPC worker state ──────────────────────────────────────────────────────
-    @AppStorage("clusterServerHost") private var clusterServerHost: String = ""
-    @AppStorage("clusterServerPort") private var clusterServerPort: Int = 4917
-    @AppStorage("clusterToken") private var clusterToken: String = ""
+    // ── RPC worker state (loaded once per launch; persisted when connecting) ───
+    @State private var clusterServerHost: String = ""
+    @State private var clusterServerPort: Int = RpcSettings.defaultClusterServerPort
+    @State private var clusterToken: String = ""
+    private static var didLoadCoordinatorSettings = false
 
     @State private var connectionString: String = ""
     @State private var endpointsExpanded: Bool = false
@@ -100,6 +101,7 @@ struct InferenceView: View {
             applyConnectionConfig(from: incomingURL.absoluteString)
         }
         .onAppear {
+            loadCoordinatorSettingsIfNeeded()
             refreshLocalModels()
         }
     }
@@ -508,20 +510,40 @@ struct InferenceView: View {
         return pendingConnection || hasCoordinatorHost
     }
 
+    private func loadCoordinatorSettingsIfNeeded() {
+        guard !Self.didLoadCoordinatorSettings else { return }
+        Self.didLoadCoordinatorSettings = true
+        clusterServerHost = RpcSettings.loadClusterServerHost()
+        clusterServerPort = RpcSettings.loadClusterServerPort()
+        clusterToken = RpcSettings.loadClusterToken()
+    }
+
+    private func persistCoordinatorSettings() {
+        RpcSettings.saveClusterConnection(
+            host: clusterServerHost,
+            port: clusterServerPort,
+            token: clusterToken
+        )
+    }
+
     private func prepareCoordinatorSettingsForStart() -> Bool {
+        let trimmedHost = clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHost.isEmpty {
+            importStatus = ""
+            persistCoordinatorSettings()
+            return true
+        }
+
         let pendingConnection = connectionString.trimmingCharacters(in: .whitespacesAndNewlines)
         if !pendingConnection.isEmpty {
-            return applyConnectionConfig(from: pendingConnection)
+            guard applyConnectionConfig(from: pendingConnection) else { return false }
+            persistCoordinatorSettings()
+            return true
         }
 
-        if clusterServerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            importStatus = "Enter a coordinator server IP or paste a connection string."
-            AppLogger.log("WARN", tag: "InferenceView", importStatus)
-            return false
-        }
-
-        importStatus = ""
-        return true
+        importStatus = "Enter a coordinator server IP or paste a connection string."
+        AppLogger.log("WARN", tag: "InferenceView", importStatus)
+        return false
     }
 
     @discardableResult

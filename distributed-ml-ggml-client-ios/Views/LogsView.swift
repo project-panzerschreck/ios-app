@@ -3,6 +3,7 @@ import UIKit
 
 struct LogsView: View {
     @EnvironmentObject private var diagnostics: AppDiagnosticsModel
+    @EnvironmentObject private var settings: RpcSettings
     @Environment(\.colorScheme) private var colorScheme
     @State private var activeFilters = LogCategory.allCases
 
@@ -10,6 +11,7 @@ struct LogsView: View {
         NavigationView {
             VStack(spacing: 0) {
                 healthSummary
+                verboseLoggingToggle
                 categoryFilters
                 Divider()
                 LogTextView(text: filteredLogsText)
@@ -37,6 +39,21 @@ struct LogsView: View {
             }
         }
         .padding()
+        .background(panelBackground)
+    }
+
+    private var verboseLoggingToggle: some View {
+        Toggle(isOn: $settings.verboseRPCLogging) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Verbose RPC / GGML logs")
+                    .font(.subheadline.weight(.semibold))
+                Text("Shows ggml-rpc wire debug, client connect/disconnect, and cache events in this panel. Disconnect and reconnect after changing.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
         .background(panelBackground)
     }
 
@@ -178,7 +195,7 @@ private enum LogCategory: String, CaseIterable, Identifiable {
         if line.contains("[STORAGE]") {
             return .storage
         }
-        if line.contains("[RPC SERVER]") {
+        if line.contains("[RPC SERVER]") || line.contains("[GGML]") {
             return .rpc
         }
 

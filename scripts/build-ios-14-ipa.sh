@@ -15,6 +15,16 @@ if [[ ! -d Frameworks/llama.xcframework ]]; then
   exit 1
 fi
 
+VERBOSE_RPC="${VERBOSE_RPC:-0}"
+XCODE_EXTRA_ARGS=()
+if [[ "$VERBOSE_RPC" == "1" ]]; then
+  echo "[build-ios-14-ipa] Building with VERBOSE_RPC_DEFAULT (GGML/RPC logs enabled by default in app)"
+  XCODE_EXTRA_ARGS+=(
+    'GCC_PREPROCESSOR_DEFINITIONS=VERBOSE_RPC_DEFAULT=1 $(inherited)'
+    'SWIFT_ACTIVE_COMPILATION_CONDITIONS=VERBOSE_RPC_DEFAULT $(inherited)'
+  )
+fi
+
 xcodebuild \
   -project distributed-ml-ggml-client-ios.xcodeproj \
   -scheme distributed-ml-ggml-client-ios \
@@ -24,6 +34,7 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY= \
+  "${XCODE_EXTRA_ARGS[@]}" \
   build
 
 if [[ ! -d "$APP_DIR" ]]; then

@@ -11,6 +11,11 @@ import SwiftUI
 struct distributed_ml_ggml_client_iosApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Install GGML log forwarding before any framework static initializers need GGML_RPC_DEBUG.
+        _ = RpcSettings.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

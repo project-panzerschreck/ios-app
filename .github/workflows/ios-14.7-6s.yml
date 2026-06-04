@@ -28,7 +28,9 @@ jobs:
           LLAMA_DIR: ${{ github.workspace }}/llama.cpp-rpc
         run: IOS_MIN=12.0 bash scripts/build-ggml-ios.sh
 
-      - name: Build unsigned IPA
+      - name: Build unsigned IPA (verbose RPC logging default)
+        env:
+          VERBOSE_RPC: "1"
         run: bash scripts/build-ios-14-ipa.sh packages/rmclusternode-6s-unsigned.ipa
 
       - name: Upload IPA

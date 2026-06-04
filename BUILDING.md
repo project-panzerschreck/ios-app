@@ -148,6 +148,30 @@ Check that the IPA is unsigned:
 unzip -l packages/rmclusternode-6s-unsigned.ipa | rg "embedded.mobileprovision|_CodeSignature" || true
 ```
 
+## Verbose RPC / GGML logging
+
+In the app **Logs** tab, enable **Verbose RPC / GGML logs**. Then disconnect and reconnect the node so the RPC worker restarts with logging enabled.
+
+**Defaults:**
+
+| Build | Verbose default |
+|-------|-----------------|
+| Xcode Debug | On |
+| CI IPA (`ios-14.7-6s` workflow) | On (`VERBOSE_RPC=1`) |
+| Local Release IPA | Off unless `VERBOSE_RPC=1` |
+
+```sh
+VERBOSE_RPC=1 bash scripts/build-ios-14-ipa.sh packages/rmclusternode-6s-unsigned.ipa
+```
+
+You should see lines tagged `[GGML]` (RPC server startup, client connect/disconnect, tensor cache, wire debug when `GGML_RPC_DEBUG` is active) and existing `[RPC SERVER]` supervisor messages.
+
+For Xcode runs, you can also set scheme environment variable `GGML_RPC_DEBUG=1` and cold-start the app for maximum `ggml-rpc` wire detail in the device console:
+
+```sh
+idevicesyslog 2>/dev/null | rg 'rmclusternode|\[GGML\]|\[RPC SERVER\]'
+```
+
 ## Notes
 
 - This branch is SwiftUI-based and targets iOS `14.7`.

@@ -4,7 +4,18 @@ This repository contains the source code for the Reused Mobile Devices iOS Node 
 
 ## iPhone 6s (iOS 14.7) branch
 
-The **`ios-14.7-6s`** branch targets **iPhone 6s / arm64 / iOS 14.7** and produces an unsigned IPA for sideloading. Use **[BUILDING.md](BUILDING.md)** on that branch for XCFramework, Xcode, and IPA steps (`IOS_MIN=12.0`, `llama.cpp-rpc` on **`iphone6-build`**). CI builds via [`.github/workflows/ios-14.7-6s.yml`](.github/workflows/ios-14.7-6s.yml).
+The **`ios-14.7-6s`** branch targets **iPhone 6s / arm64 / iOS 14.7** and produces an unsigned IPA for sideloading. Use **[BUILDING.md](BUILDING.md)** on that branch for XCFramework, Xcode, and IPA steps (`IOS_MIN=12.0`, `llama.cpp-rpc` on **`iphone6-build`**). CI builds via [`.github/workflows/ios-14.7-6s.yml`](.github/workflows/ios-14.7-6s.yml) with **verbose RPC logging enabled by default** in the shipped IPA (`VERBOSE_RPC=1`).
+
+### Verbose RPC / GGML logs
+
+The **Logs** tab can show detailed `[GGML]` and `[RPC SERVER]` output (RPC server startup, client connect/disconnect, tensor cache, wire debug). Enable **Verbose RPC / GGML logs**, then disconnect and reconnect the node.
+
+- **CI / release IPA from this branch:** verbose is on by default (no rebuild needed).
+- **Local Xcode (Debug):** also defaults to on.
+- **Local release IPA without the flag:** `VERBOSE_RPC=1 bash scripts/build-ios-14-ipa.sh`
+- **Device console:** `idevicesyslog 2>/dev/null | rg '\[GGML\]|\[RPC SERVER\]'`
+
+See [BUILDING.md — Verbose RPC / GGML logging](BUILDING.md#verbose-rpc--ggml-logging) for full detail.
 
 # Build & Run Guide
 
