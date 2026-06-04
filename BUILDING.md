@@ -150,7 +150,7 @@ unzip -l packages/rmclusternode-6s-unsigned.ipa | rg "embedded.mobileprovision|_
 
 ## Verbose RPC / GGML logging
 
-In the app **Logs** tab, enable **Verbose RPC / GGML logs**. Then disconnect and reconnect the node so the RPC worker restarts with logging enabled.
+In the app **Logs** tab, enable **Verbose RPC / GGML logs**. Then disconnect and reconnect the node so the RPC worker restarts with logging enabled. The panel keeps only the **most recent 100 log lines** in memory to save RAM.
 
 **Defaults:**
 

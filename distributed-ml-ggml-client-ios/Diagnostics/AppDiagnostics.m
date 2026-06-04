@@ -2,7 +2,7 @@
 
 NSNotificationName const AppDiagnosticsDidUpdateNotification = @"AppDiagnosticsDidUpdateNotification";
 
-static const NSUInteger kAppDiagnosticsMaxLines = 500;
+static const NSUInteger kAppDiagnosticsMaxLines = 100;
 
 @interface AppDiagnostics ()
 @property (nonatomic, strong) dispatch_queue_t queue;

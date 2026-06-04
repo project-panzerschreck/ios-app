@@ -8,7 +8,7 @@ The **`ios-14.7-6s`** branch targets **iPhone 6s / arm64 / iOS 14.7** and produc
 
 ### Verbose RPC / GGML logs
 
-The **Logs** tab can show detailed `[GGML]` and `[RPC SERVER]` output (RPC server startup, client connect/disconnect, tensor cache, wire debug). Enable **Verbose RPC / GGML logs**, then disconnect and reconnect the node.
+The **Logs** tab can show detailed `[GGML]` and `[RPC SERVER]` output (RPC server startup, client connect/disconnect, tensor cache, wire debug). Only the **latest 100 lines** are kept in memory. Enable **Verbose RPC / GGML logs**, then disconnect and reconnect the node.
 
 - **CI / release IPA from this branch:** verbose is on by default (no rebuild needed).
 - **Local Xcode (Debug):** also defaults to on.
