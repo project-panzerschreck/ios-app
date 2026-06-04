@@ -57,9 +57,7 @@ final class StorageServer {
 
     /// True while at least one HTTP request is being handled (chunk transfer, scan, etc.).
     var isBusy: Bool {
-        activeRequestLock.lock()
-        defer { activeRequestLock.unlock() }
-        return activeRequestCount > 0
+        activeRequestLock.withLock { activeRequestCount > 0 }
     }
 
     init(storageDir: URL) {
@@ -95,15 +93,11 @@ final class StorageServer {
     }
 
     private func handleConnection(_ connection: NWConnection) {
-        activeRequestLock.lock()
-        activeRequestCount += 1
-        activeRequestLock.unlock()
+        activeRequestLock.withLock { activeRequestCount += 1 }
         connection.start(queue: queue)
         Task {
             defer {
-                self.activeRequestLock.lock()
-                self.activeRequestCount -= 1
-                self.activeRequestLock.unlock()
+                self.activeRequestLock.withLock { self.activeRequestCount -= 1 }
             }
             do {
                 try await handleConnectionAsync(connection)

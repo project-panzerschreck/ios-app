@@ -35,20 +35,6 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		A3DE2B1B2FBE756B00FED023 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				A3DE2B292FBE757300FED023 /* llama.xcframework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
 		3D84C1762DC18B423C308E1D /* ggml-rpc.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = "ggml-rpc.xcframework"; path = "Frameworks/ggml-rpc.xcframework"; sourceTree = "<group>"; };
 		A30491252F4D1DFE003138C5 /* distributed-ml-ggml-client-ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "distributed-ml-ggml-client-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -476,16 +462,17 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H258T76LF5;
+				DEVELOPMENT_TEAM = NQWLF9RT3X;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = "distributed-ml-ggml-client-ios/Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "ajzhou.rmcluster-node";
+				PRODUCT_BUNDLE_IDENTIFIER = "sreehal.distributed-ml-ggml-client-ios";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -517,6 +504,7 @@
 				DEVELOPMENT_TEAM = NQWLF9RT3X;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = "distributed-ml-ggml-client-ios/Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

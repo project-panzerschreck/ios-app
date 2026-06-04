@@ -385,26 +385,29 @@ struct InferenceView: View {
             Label(msg.isEmpty ? "Unavailable" : msg, systemImage: "exclamationmark.triangle")
                 .font(.caption)
                 .foregroundStyle(.red)
-            } else if engine.rpcServerState == .starting {
-                Button {
-                    engine.stopRPCServer()
-                } label: {
-                    Label("Cancel connection", systemImage: "xmark.circle")
-                        .frame(maxWidth: .infinity)
-                        .foregroundStyle(.white)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
                 .padding(.vertical, 4)
+        case .starting:
+            Button {
+                engine.stopRPCServer()
+            } label: {
+                Label("Cancel connection", systemImage: "xmark.circle")
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .padding(.vertical, 4)
         default:
             if isRunning {
                 Button(role: .destructive) {
                     AppLogger.log(tag: "InferenceView", "Disconnect tapped")
                     engine.stopRPCServer()
                 } label: {
-                    Label("Disconnect from cluster", systemImage: "stop.circle")
-                        .frame(maxWidth: .infinity)
+                    Label("Disconnect", systemImage: "stop.circle")
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(Color.red)
                 }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets())
@@ -421,7 +424,10 @@ struct InferenceView: View {
                     )
                 } label: {
                     Text("Connect to cluster")
-                        .frame(maxWidth: .infinity)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(!canStartRPCServer ? Color.secondary : Color.white)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(!canStartRPCServer ? Color.gray.opacity(0.3) : Color.accentColor)
                 }
                 .buttonStyle(.plain)
                 .disabled(!canStartRPCServer)

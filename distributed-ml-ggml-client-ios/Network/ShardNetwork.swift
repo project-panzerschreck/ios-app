@@ -261,7 +261,7 @@ struct LocalInterface: Identifiable {
     let ip: String
 
     /// All non-loopback IPv4 addresses on this device, sorted by priority.
-    static func allIPv4() -> [LocalInterface] {
+    nonisolated static func allIPv4() -> [LocalInterface] {
         var ifAddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifAddr) == 0, let first = ifAddr else { return [] }
         defer { freeifaddrs(first) }
